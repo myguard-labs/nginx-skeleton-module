@@ -1,0 +1,32 @@
+Changes with the nginx-skeleton-module
+
+    *) Security: scan the full User-Agent header chain, not just the first line
+       (a duplicate User-Agent line used to bypass the header scan).
+
+    *) Security: validate the scan rule table against the cross-buffer seam
+       carry at config load, so an over-long rule in a derived module fails
+       loudly instead of bypassing when split across a buffer boundary.
+
+    *) Routed fork PRs to GitHub-hosted runners; self-hosted only for our own
+       push/PR events.
+
+    *) Added a dedicated path-gated ASan/UBSan soak workflow (asan.yml) and its
+       README badge; renamed the badge/workflow to "A/UBSan".
+
+    *) Added CI matrix building nginx mainline, nginx stable, and angie
+       (monthly, in ci-deep.yml).
+
+    *) Added `-T` merged-config-dump check to the build-test.yml PR gate,
+       alongside the existing `-t` single-directive check.
+
+    *) Vendored nginx/nginx-tests as a read-only submodule at
+       ci/vendor/nginx-tests/ for the shared Test::Nginx::Socket framework.
+
+    *) Pinned sha256 digests for nginx stable (1.30.3) and angie (1.12.0)
+       tarballs in ci/tools/ci-build.sh.
+
+    *) Renamed the Build and Test workflow/badge to "Build&Test".
+
+    *) Initial skeleton: module + scan core, Test::Nginx suite, libFuzzer
+       target, CI harness (build-test, asan, ci-deep, codeql, fuzzing,
+       security-scanners, valgrind, bump).

@@ -1,0 +1,15 @@
+.build/
+ci/t/servroot/
+ci/fuzz/fuzz_scan
+ci/fuzz/fuzz_body
+ci/fuzz/corpus-min/
+ci/fuzz/crash-*
+*.o
+*.so
+
+# libFuzzer writes newly-discovered units into the corpus dir at runtime.
+# Only the curated, hand-named seeds belong in git; the rest are churn.
+ci/fuzz/corpus/fuzz_scan/*
+!ci/fuzz/corpus/fuzz_scan/[0-9][0-9]-*
+ci/fuzz/corpus/fuzz_body/*
+!ci/fuzz/corpus/fuzz_body/[0-9][0-9]-*

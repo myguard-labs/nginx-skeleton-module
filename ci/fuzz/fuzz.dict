@@ -1,0 +1,31 @@
+# libFuzzer dictionary for fuzz_scan.
+#
+# Tokens the mutator would otherwise take a very long time to assemble byte by
+# byte: the marker rule fragment, and the encoding constructs that let bytes
+# get smuggled past the decoder in a way that disagrees with nginx's own
+# ngx_unescape_uri() (percent, double-percent, overlong, NUL, CR/LF).
+
+# --- rule fragment
+"skel-marker"
+"SKEL-MARKER"
+"skel"
+"marker"
+
+# --- encoding constructs (the decoder is the interesting part)
+"%"
+"%25"
+"%2e"
+"%2f"
+"%252e"
+"%252f"
+"%c0%af"
+"%u002e"
+"%00"
+"%0a"
+"%0d"
+"+"
+"?"
+"#"
+"&"
+"="
+";"

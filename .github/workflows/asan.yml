@@ -1,0 +1,87 @@
+name: A/UBSan
+
+# Dedicated ASan+UBSan soak, PATH-GATED: only runs when a PR/push touches code
+# that could carry a memory/UB bug (the C source, the build/soak harness, or
+# this workflow). A docs/memory/other-workflow PR skips it entirely instead of
+# paying the sanitizer build+soak for zero possible signal.
+#
+# The asan build is a STATIC --add-module binary (the module is linked into the
+# nginx binary, there is no separate .so), so the sanitizer runtime is present
+# on every code path. soak.sh detects the static build and omits load_module.
+#
+# Why this exists alongside the Valgrind job: ASan is fast enough to run a real
+# request storm on every PR and catches heap overflow / UAF outside nginx's
+# pool blocks; Valgrind (20x slower, LITE at PR time) still catches the
+# uninitialised reads and intra-pool UAF that ASan cannot see. They are
+# complementary, not redundant.
+#
+# Action pins (keep in sync with build-test.yml / valgrind.yml headers):
+# actions/checkout@v5 -> 93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NGINX_VERSION: "1.31.2"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "ci/t/**"
+      - "ci/tools/ci-build.sh"
+      - "ci/tools/soak.sh"
+      - ".github/workflows/asan.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "ci/t/**"
+      - "ci/tools/ci-build.sh"
+      - "ci/tools/soak.sh"
+      - ".github/workflows/asan.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: asan-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  asan-soak:
+    name: ASan/UBSan soak (60s)
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 45
+    steps:
+      - name: Checkout module
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl libpcre2-dev libssl-dev zlib1g-dev
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          mode: asan
+          nginx-version: ${{ env.NGINX_VERSION }}
+
+      - name: Build ASan/UBSan nginx + module (static --add-module)
+        run: bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" asan
+
+      # soak.sh asserts it saw >=1 block AND >=1 pass, so a green result proves
+      # the module actually ran under the sanitizer -- not merely that nothing
+      # crashed. halt_on_error aborts the process on the first ASan/UBSan report
+      # so the soak fails loudly instead of logging and continuing.
+      - name: ASan/UBSan soak (60s @ 4 conc)
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          bash ci/tools/soak.sh \
+            "$GITHUB_WORKSPACE/.build/nginx-${NGINX_VERSION}-asan/objs/nginx" 60 4

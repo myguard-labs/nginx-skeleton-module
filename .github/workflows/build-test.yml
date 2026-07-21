@@ -1,0 +1,408 @@
+name: Build&Test
+
+# The PR gate: everything here must be green to merge. Fast enough to run on
+# every push (target: well under 15 min wall-clock). The expensive dynamic
+# analysis lives in ci-deep.yml (monthly cron + dispatch).
+#
+# Action pins are repeated in every workflow in this repo -- keep them in sync:
+# actions/checkout@v5        -> 93cb6efe18208431cddfb8368fd83d5badbf9bfd
+# actions/cache@v4           -> 0057852bfaa89a56745cba8c7296529d2fc39830
+# actions/upload-artifact@v5 -> 330a01c490aca151604b8cf639adc76d48f6c5d4
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NGINX_VERSION: "1.31.2"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validation:
+    name: Validation
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck shellcheck
+
+      - name: Validate scripts and source
+        run: |
+          bash -n ci/tools/ci-build.sh
+          bash -n ci/tools/soak.sh
+          bash -n ci/tools/bump-versions.sh
+          bash -n ci/tools/rename-module.sh
+          shellcheck ci/tools/ci-build.sh ci/tools/soak.sh \
+            ci/tools/bump-versions.sh ci/tools/rename-module.sh ci/fuzz/build.sh
+          cppcheck \
+            --enable=warning,performance,portability \
+            --error-exitcode=1 \
+            --suppress=missingIncludeSystem \
+            --suppress=normalCheckLevelMaxBranches \
+            --suppress=unusedFunction \
+            --suppress=unusedStructMember \
+            -I src \
+            src/
+          # Catches whitespace errors and conflict markers that survived a merge.
+          git diff --check
+
+      - name: Lint workflows
+        run: |
+          version=1.7.7
+          base="https://github.com/rhysd/actionlint/releases/download/v${version}"
+          tarball="actionlint_${version}_linux_amd64.tar.gz"
+          # Verify the tarball against the checksums file published in the same
+          # signed release BEFORE executing it, so a tampered asset fails closed.
+          curl -fsSL -o /tmp/actionlint.tgz "${base}/${tarball}"
+          curl -fsSL -o /tmp/actionlint.checksums \
+            "${base}/actionlint_${version}_checksums.txt"
+          ( cd /tmp && grep " ${tarball}\$" actionlint.checksums \
+              | sed 's#'"${tarball}"'#actionlint.tgz#' | sha256sum -c - )
+          tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
+          # -config-file explicitly: auto-discovery of .github/actionlint.yaml is
+          # not reliable across checkout layouts, and without the config every
+          # self-hosted runner label ("builder02", "lxc") is flagged as unknown --
+          # which is how this lint step becomes noise everyone ignores.
+          /tmp/actionlint -color -config-file .github/actionlint.yaml \
+            .github/workflows/*.yml
+
+  build:
+    name: Build
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl libpcre2-dev zlib1g-dev
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          mode: debug
+          nginx-version: ${{ env.NGINX_VERSION }}
+
+      - name: Build server and dynamic module
+        run: |
+          bash ci/tools/ci-build.sh nginx "$NGINX_VERSION"
+          build=".build/nginx-${NGINX_VERSION}-debug/objs"
+          test -f "$build/ngx_http_skel_module.so"
+
+      # The .so must actually LOAD. A module that compiles but has an undefined
+      # symbol (a new source file missing from `config`) only fails at dlopen,
+      # which a pure compile job never reaches.
+      - name: Module loads and config parses
+        run: |
+          set -euo pipefail
+          build="$PWD/.build/nginx-${NGINX_VERSION}-debug"
+          tp="$RUNNER_TEMP/loadtest"
+          mkdir -p "$tp/logs"
+          cat > "$tp/nginx.conf" <<EOF
+          load_module $build/objs/ngx_http_skel_module.so;
+          events {}
+          http {
+              server {
+                  listen 18099;
+                  location /t { skel block; skel_status 404; empty_gif; }
+              }
+          }
+          EOF
+          "$build/objs/nginx" -t -p "$tp" -c "$tp/nginx.conf"
+
+      # `-t` alone only proves a single minimal directive parses. `-T` dumps the
+      # fully-merged config, which is what actually exercises directive
+      # inheritance across nested contexts -- the case a contributor's own
+      # multi-server/multi-location config will hit that a one-location smoke
+      # test never would.
+      - name: Module directives survive a merged multi-context dump (-T)
+        run: |
+          set -euo pipefail
+          build="$PWD/.build/nginx-${NGINX_VERSION}-debug"
+          tp="$RUNNER_TEMP/dumptest"
+          mkdir -p "$tp/logs"
+          cat > "$tp/nginx.conf" <<EOF
+          load_module $build/objs/ngx_http_skel_module.so;
+          events {}
+          http {
+              server {
+                  listen 18097;
+                  location /a { skel block; empty_gif; }
+                  location /b {
+                      location /b/inner { skel detect; empty_gif; }
+                  }
+              }
+              server {
+                  listen 18096;
+                  location /c { skel off; empty_gif; }
+              }
+          }
+          EOF
+          out="$("$build/objs/nginx" -T -p "$tp" -c "$tp/nginx.conf")"
+          echo "$out"
+          for want in "location /a" "location /b/inner" "location /c"; do
+            echo "$out" | grep -qF "$want" \
+              || { echo "FAIL: -T dump missing '$want'" >&2; exit 1; }
+          done
+          echo "OK: directives survived merged multi-context dump"
+
+      # An invalid enum value must be REJECTED at config time, not silently
+      # coerced into a default that fails open (a typo'd mode must not mean off).
+      - name: Invalid directive values are rejected
+        run: |
+          set -euo pipefail
+          build="$PWD/.build/nginx-${NGINX_VERSION}-debug"
+          tp="$RUNNER_TEMP/rejecttest"
+          mkdir -p "$tp/logs"
+          cat > "$tp/nginx.conf" <<EOF
+          load_module $build/objs/ngx_http_skel_module.so;
+          events {}
+          http {
+              server {
+                  listen 18098;
+                  location /t { skel bogus_mode; empty_gif; }
+              }
+          }
+          EOF
+          if "$build/objs/nginx" -t -p "$tp" -c "$tp/nginx.conf" 2>"$tp/out"; then
+            echo "FAIL: nginx -t accepted an invalid skel mode" >&2
+            cat "$tp/out" >&2
+            exit 1
+          fi
+          grep -q "invalid value" "$tp/out" \
+            || { echo "FAIL: wrong rejection message:" >&2; cat "$tp/out" >&2; exit 1; }
+          echo "OK: invalid mode rejected at config time"
+
+      # -Werror with the full warning set, against the real nginx CFLAGS. The
+      # module build above uses nginx's own (laxer) flags; this is the strict
+      # gate, kept separate so a core warning cannot fail our build and vice versa.
+      - name: Strict module compile
+        run: |
+          build=".build/nginx-${NGINX_VERSION}-debug"
+          cflags=$(awk '/^CFLAGS[[:space:]]*=/{sub(/^CFLAGS[[:space:]]*=[[:space:]]*/,""); print; exit}' "$build/objs/Makefile")
+          incs=$(awk '/^ALL_INCS[[:space:]]*=/{found=1} found{line=$0; sub(/^ALL_INCS[[:space:]]*=[[:space:]]*/,"",line); continued=(line ~ /\\$/); gsub(/\\$/, "", line); printf "%s ", line; if (!continued) exit}' "$build/objs/Makefile")
+          # cflags and incs are compiler flag lists and must word-split.
+          # shellcheck disable=SC2086
+          (
+            cd "$build"
+            for src in "$GITHUB_WORKSPACE"/src/*.c; do
+              echo "--- strict: $(basename "$src")"
+              cc -c -fPIC $cflags \
+                -Wall -Wextra -Wshadow -Wstrict-prototypes \
+                -Wstrict-aliasing -Wunreachable-code -Werror \
+                -Wno-unused-parameter \
+                -I "$GITHUB_WORKSPACE/src" \
+                $incs "$src" \
+                -o /tmp/"$(basename "$src" .c)".o
+            done
+          )
+
+  test-nginx:
+    name: Test::Nginx
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl libpcre2-dev zlib1g-dev \
+            cpanminus libio-socket-ssl-perl
+          # Test::Nginx is not packaged on the runner; install it from CPAN.
+          # SUPPLY CHAIN: this pulls + runs unpinned CPAN code as root on a
+          # persistent self-hosted runner. The test SUITE (ci/vendor/nginx-tests)
+          # is vendored+pinned; the Test::Nginx::Socket FRAMEWORK is not cleanly
+          # vendorable, so it is installed fresh. Accepted residual risk (only
+          # trusted events reach self-hosted runners post fork-routing); revisit
+          # with a pinned/vendored framework if the threat model tightens.
+          sudo cpanm --notest --quiet Test::Nginx
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          mode: debug
+          nginx-version: ${{ env.NGINX_VERSION }}
+
+      - name: Build dynamic module
+        run: bash ci/tools/ci-build.sh nginx "$NGINX_VERSION"
+
+      - name: Run ci/t/
+        env:
+          TEST_NGINX_BINARY: ${{ github.workspace }}/.build/nginx-${{ env.NGINX_VERSION }}-debug/objs/nginx
+          TEST_NGINX_LOAD_MODULES: ${{ github.workspace }}/.build/nginx-${{ env.NGINX_VERSION }}-debug/objs/ngx_http_skel_module.so
+          # Test::Nginx::Socket's client read timeout defaults to ~2s. That is far
+          # too tight on the shared builder02 LXC: under normal build-host load a
+          # live request can take >2s to first byte, and a whole file then fails as
+          # a contiguous "client socket timed out" sweep with ZERO assertion
+          # failures. That is a harness artifact, not a real red -- do not "fix" it
+          # by editing tests. Export this locally too when reproducing.
+          TEST_NGINX_TIMEOUT: "20"
+          TEST_NGINX_SERVROOT: ${{ github.workspace }}/ci/t/servroot
+        run: prove -v ci/t/
+
+  # Guards the two rename-script traps that shipped silently in the past:
+  # (1) a fresh `rm -rf .git && git init` makes `git ls-files` succeed with
+  #     EMPTY output, which used to dead-end the find fallback and turn the
+  #     content rewrite into a no-op;
+  # (2) a bare s/skel/name/g corrupted the word "skeleton" into "nameeton".
+  # Replicates the documented user flow end-to-end: fresh init -> rename ->
+  # the renamed module actually builds.
+  rename-smoke:
+    name: Rename smoke
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl libpcre2-dev zlib1g-dev
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          mode: debug
+          nginx-version: ${{ env.NGINX_VERSION }}
+      - name: Rename in a fresh-init copy and rebuild
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/rename-smoke"
+          rm -rf "$work"
+          mkdir -p "$work"
+          cp -a "$GITHUB_WORKSPACE"/. "$work"
+          cd "$work"
+          # Documented flow: drop history, re-init. This is exactly the state
+          # where `git ls-files` prints nothing (trap 1).
+          rm -rf .git .build
+          git init -q
+          # Reuse the cached tarball so this job does not hit nginx.org.
+          mkdir -p .build
+          tarball="$GITHUB_WORKSPACE/.build/nginx-${NGINX_VERSION}.tar.gz"
+          if [ -f "$tarball" ]; then cp "$tarball" .build/; fi
+
+          bash ci/tools/rename-module.sh foo
+
+          # Trap 2: "skeleton" must survive the rewrite intact.
+          # Literal is split so this workflow file cannot match itself.
+          # -i: also catch an all-caps FOO''ETON corruption (literal split, like
+          # the pattern above, so this comment cannot trip its own grep).
+          if grep -RIni 'foo''eton' . --exclude-dir=.git --exclude-dir=.build; then
+            echo "FAIL: rename corrupted the word 'skeleton'" >&2
+            exit 1
+          fi
+          # Trap 1: no bare placeholder token may remain outside fuzz seeds.
+          if grep -RInE '\bskel\b|\bSKEL\b' src/ config ci/t/ ci/fuzz/*.c ci/tools/ci-build.sh; then
+            echo "FAIL: placeholder token survived the rewrite" >&2
+            exit 1
+          fi
+          test -f src/ngx_http_foo_module.c
+          test -f src/ngx_http_foo_scan.c
+          test -f src/ngx_http_foo_scan.h
+
+          bash ci/tools/ci-build.sh nginx "$NGINX_VERSION"
+          test -f ".build/nginx-${NGINX_VERSION}-debug/objs/ngx_http_foo_module.so"
+          echo "OK: renamed module builds from a fresh init"
+
+  asan:
+    name: ASan and UBSan
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl libpcre2-dev zlib1g-dev \
+            cpanminus libio-socket-ssl-perl
+          sudo cpanm --notest --quiet Test::Nginx
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          mode: asan
+          nginx-version: ${{ env.NGINX_VERSION }}
+
+      # STATIC + sanitizer build, so the ASan/UBSan runtime is linked into the
+      # server binary itself. A dynamic .so loaded by a plain nginx gets no
+      # sanitizer runtime and this job would pass while checking nothing.
+      - name: Build with sanitizers
+        run: bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" asan
+
+      # THE GATE THAT KEEPS THE CACHE HONEST.
+      #
+      # Every failure mode of a cached sanitizer build ends the same way: a
+      # green job that verified nothing. A stale cache key, a restore-keys
+      # ladder someone adds "to improve the hit rate", a tree path that loses
+      # its -asan suffix -- all of them hand this job non-instrumented objects,
+      # and NONE of them fail loudly. The tests still pass, because tests pass
+      # on an uninstrumented binary too. That is the whole danger.
+      #
+      # So assert the property directly instead of trusting the plumbing: the
+      # binary we are about to run tests against must contain the ASan runtime.
+      # If this ever fails, the cache is lying -- do not "fix" it by deleting
+      # this check.
+      - name: Assert the sanitizer runtime is actually linked in
+        run: |
+          set -euo pipefail
+          bin=".build/nginx-${NGINX_VERSION}-asan/objs/nginx"
+          test -f "$bin" || { echo "FAIL: $bin missing" >&2; exit 1; }
+          if ! nm -C "$bin" 2>/dev/null | grep -qE '__asan_init|__asan_report'; then
+            echo "FAIL: $bin has NO ASan runtime linked." >&2
+            echo "      The sanitizer job would pass while checking nothing." >&2
+            echo "      Suspect a poisoned/mismatched build-tree cache." >&2
+            exit 1
+          fi
+          if ! nm -C "$bin" 2>/dev/null | grep -qE '__ubsan|__ubsan_handle'; then
+            echo "FAIL: $bin has NO UBSan runtime linked." >&2
+            exit 1
+          fi
+          echo "OK: ASan + UBSan runtimes present in the binary under test"
+
+      - name: Run ci/t/ under ASan and UBSan
+        env:
+          TEST_NGINX_BINARY: ${{ github.workspace }}/.build/nginx-${{ env.NGINX_VERSION }}-asan/objs/nginx
+          TEST_NGINX_TIMEOUT: "30"
+          TEST_NGINX_SERVROOT: ${{ github.workspace }}/ci/t/servroot
+          # detect_leaks=0: nginx intentionally leaves its cycle pool reachable at
+          # exit; leak checking is valgrind.yml's job, with suppressions. Here we
+          # want memory-error detection to abort the run immediately.
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: prove -v ci/t/

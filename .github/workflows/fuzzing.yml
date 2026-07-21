@@ -1,0 +1,132 @@
+name: Fuzzing
+
+# Fast fuzz REGRESSION gate on every PR/push: replay the committed corpus +
+# every known crash reproducer, then 120s of fresh mutation on the scan core.
+#
+# This is a regression gate, not a discovery run -- 120s finds nothing new, and
+# it is not meant to. Long fuzz DISCOVERY (hours) lives in ci-deep.yml (monthly
+# cron + workflow_dispatch). Keeping them separate is what lets this one stay in
+# the PR path.
+#
+# Action pins (keep in sync with build-test.yml):
+# actions/checkout@v5        -> 93cb6efe18208431cddfb8368fd83d5badbf9bfd
+# actions/upload-artifact@v5 -> 330a01c490aca151604b8cf639adc76d48f6c5d4
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NGINX_VERSION: "1.31.2"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: fuzzing-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz-regression:
+    name: Fuzz regression (120s)
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout module
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang curl libpcre2-dev zlib1g-dev
+
+      # The fuzz target links nginx's real ngx_string.c, so it needs a
+      # configured source tree (objs/ holds ngx_auto_config.h).
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          mode: debug
+          nginx-version: ${{ env.NGINX_VERSION }}
+
+      - name: Fetch + configure nginx source (the fuzz build needs headers)
+        run: bash ci/tools/ci-build.sh nginx "$NGINX_VERSION"
+
+      - name: Build fuzz target
+        run: CC=clang bash ci/fuzz/build.sh
+
+      # Replay every past crash FIRST and as its own step. If a fix regresses,
+      # this fails in seconds with an obvious name, instead of being rediscovered
+      # (or missed) somewhere inside the 120s mutation run.
+      - name: Replay known crash reproducers
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          repros=(ci/fuzz/regressions/*)
+          found=0
+          for f in "${repros[@]}"; do
+            [ -f "$f" ] || continue
+            case "$f" in *README*) continue;; esac
+            found=1
+            echo "--- replay: $f"
+            ./ci/fuzz/fuzz_scan "$f"
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "no regression reproducers yet (ci/fuzz/regressions/ is empty)"
+          fi
+
+      - name: Run fuzz_scan 120s
+        run: |
+          set -euo pipefail
+          cd ci/fuzz
+          echo "=== fuzz_scan (120s) ==="
+          set +e
+          ./fuzz_scan \
+            -max_total_time=120 \
+            -max_len=16384 \
+            -dict=fuzz.dict \
+            -print_final_stats=1 \
+            -artifact_prefix="crash-fuzz_scan-" \
+            corpus/fuzz_scan
+          rc=$?
+          set -e
+          [ $rc -eq 0 ] || { echo "❌ fuzz_scan crash (exit $rc)"; exit 1; }
+          echo "✓ fuzz_scan: no crashes in 120s"
+
+      # fuzz_body runs as a real discovery fuzz (H2 fixed: the seam decodes once
+      # and carries decoded bytes + any unfinished "%"-token, so chunking no
+      # longer changes the verdict; see issues.md H2 / the harness header). The
+      # curated 07/08/09 seeds pin the three inputs that exposed H2 so a
+      # regression re-crashes immediately.
+      - name: Run fuzz_body 120s
+        run: |
+          set -euo pipefail
+          cd ci/fuzz
+          echo "=== fuzz_body (120s) ==="
+          set +e
+          ./fuzz_body \
+            -max_total_time=120 \
+            -max_len=16384 \
+            -print_final_stats=1 \
+            -artifact_prefix="crash-fuzz_body-" \
+            corpus/fuzz_body
+          rc=$?
+          set -e
+          [ $rc -eq 0 ] || { echo "❌ fuzz_body crash (exit $rc)"; exit 1; }
+          echo "✓ fuzz_body: no chunk-differential in 120s"
+
+      # The crashing input is the only artifact that matters on a red -- without
+      # it the failure is unreproducible and the run log is useless.
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: fuzz-fast-crashes
+          path: ${{ github.workspace }}/ci/fuzz/crash-*
+          retention-days: 14

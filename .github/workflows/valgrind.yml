@@ -1,0 +1,71 @@
+name: Valgrind
+
+# Memcheck LITE soak on every PR/push: 60s of a mixed attack/benign request
+# storm against a debug nginx, under memcheck with suppressions.
+#
+# Lite on purpose. The full memcheck + helgrind soaks (600s each) live in
+# ci-deep.yml; at PR time we only want to catch a leak or invalid access that a
+# minute of real traffic already exposes. Valgrind runs the module ~20x slower,
+# so a longer soak here would dominate the merge path for very little extra
+# coverage.
+#
+# Why this exists alongside the ASan job: ASan cannot see nginx's pool
+# allocations (one big malloc, hand-suballocated), so a use-after-free WITHIN a
+# pool block is invisible to it. Valgrind, running on the raw mmap/malloc layer,
+# still catches uninitialised reads there.
+#
+# Action pin (keep in sync with build-test.yml):
+# actions/checkout@v5 -> 93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NGINX_VERSION: "1.31.2"
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: valgrind-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  memcheck-lite:
+    name: Memcheck lite (60s soak)
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 45
+    steps:
+      - name: Checkout module
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl libpcre2-dev zlib1g-dev valgrind
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          mode: debug
+          nginx-version: ${{ env.NGINX_VERSION }}
+
+      - name: Build debug nginx + module
+        run: bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" debug
+
+      # soak.sh asserts it saw >=1 block AND >=1 pass, so a green result proves
+      # the module actually ran -- not merely that nothing crashed.
+      - name: Memcheck soak (60s @ 4 conc, WITH suppressions)
+        env:
+          USE_VALGRIND: "1"
+        run: |
+          bash ci/tools/soak.sh \
+            "$GITHUB_WORKSPACE/.build/nginx-${NGINX_VERSION}-debug/objs/nginx" 60 4

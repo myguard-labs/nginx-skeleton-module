@@ -1,0 +1,257 @@
+name: CI Deep
+
+# Exhaustive dynamic analysis. Monthly cron + on-demand ONLY -- never on a PR.
+#
+# The PR-time gates are the standalone workflows: fuzzing.yml (120s fuzz
+# regression), valgrind.yml (60s memcheck lite) and security-scanners.yml. This
+# file is their long-running counterpart: hours of fuzz discovery, 600s memcheck
+# and helgrind soaks. Splitting them is what keeps the merge path fast while
+# still running the heavy analysis somewhere.
+#
+# Jobs: build-flavors (nginx mainline/stable + angie) · fuzz (long) · memcheck
+#   soak · helgrind soak.
+#   memcheck AND helgrind run via ci/tools/soak.sh (USE_VALGRIND / USE_HELGRIND),
+#   which passes --suppressions=ci/tools/valgrind.supp and --error-exitcode=99.
+#
+# build-flavors exists because build-test.yml (the fast PR gate) only builds
+# ONE pinned nginx version -- the module claims angie support and tracks both
+# nginx release branches, but nothing in CI actually built angie or nginx
+# stable until this job. It is here (monthly), not in the PR gate, because
+# each leg is a from-scratch configure+compile+Test::Nginx run and three of
+# them would blow the PR gate's <15min budget.
+#
+# No chat notifications by design: a failure here surfaces as a red run + the
+# uploaded crash/corpus artifacts + the job summary. Add a notify step only if
+# someone is actually going to act on it -- an unread alert is worse than none.
+#
+# Action pins (keep in sync with build-test.yml):
+# actions/checkout@v5        -> 93cb6efe18208431cddfb8368fd83d5badbf9bfd
+# actions/upload-artifact@v5 -> 330a01c490aca151604b8cf639adc76d48f6c5d4
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  NGINX_VERSION: "1.31.2"
+
+on:
+  schedule:
+    # Monthly, day 6 @ 03:30 UTC -- staggered from codeql.yml (day 4).
+    - cron: "30 3 6 * *"
+  workflow_dispatch:
+    inputs:
+      fuzz_seconds:
+        description: "Fuzz duration (seconds)"
+        required: false
+        default: "3600"
+
+concurrency:
+  group: ci-deep-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-flavors:
+    name: Build & Test::Nginx (${{ matrix.flavor }} ${{ matrix.version }})
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: nginx
+            version: "1.31.2"
+            label: mainline
+          - flavor: nginx
+            version: "1.30.3"
+            label: stable
+          - flavor: angie
+            version: "1.12.0"
+            label: angie
+    steps:
+      - name: Checkout module
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl libpcre2-dev zlib1g-dev \
+            cpanminus libio-socket-ssl-perl
+          sudo cpanm --notest --quiet Test::Nginx
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          mode: debug
+          flavor: ${{ matrix.flavor }}
+          nginx-version: ${{ matrix.version }}
+
+      - name: Build server and dynamic module
+        run: |
+          bash ci/tools/ci-build.sh "${{ matrix.flavor }}" "${{ matrix.version }}"
+          build=".build/${{ matrix.flavor }}-${{ matrix.version }}-debug/objs"
+          test -f "$build/ngx_http_skel_module.so"
+
+      - name: Run ci/t/
+        env:
+          TEST_NGINX_BINARY: ${{ github.workspace }}/.build/${{ matrix.flavor }}-${{ matrix.version }}-debug/objs/nginx
+          TEST_NGINX_LOAD_MODULES: ${{ github.workspace }}/.build/${{ matrix.flavor }}-${{ matrix.version }}-debug/objs/ngx_http_skel_module.so
+          # See build-test.yml's identical setting for why this must be 20, not
+          # the ~2s Test::Nginx::Socket default.
+          TEST_NGINX_TIMEOUT: "20"
+          TEST_NGINX_SERVROOT: ${{ github.workspace }}/ci/t/servroot
+        run: prove -v ci/t/
+
+  fuzz:
+    name: Fuzz (scan core, long)
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 600
+    steps:
+      - name: Checkout module
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang curl libpcre2-dev zlib1g-dev
+
+      # The input goes through an env var, never ${{ }} inside run: -- template
+      # expansion of event data into a shell script is an injection primitive
+      # (zizmor template-injection), and this file is a template people copy.
+      - name: Select fuzz duration
+        env:
+          DISPATCH_FUZZ_SECS: ${{ github.event.inputs.fuzz_seconds }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "FUZZ_SECS=${DISPATCH_FUZZ_SECS}" >> "$GITHUB_ENV"
+          else
+            echo "FUZZ_SECS=14400" >> "$GITHUB_ENV"
+          fi
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          mode: debug
+          nginx-version: ${{ env.NGINX_VERSION }}
+
+      - name: Fetch + configure nginx source (the fuzz build needs headers)
+        run: bash ci/tools/ci-build.sh nginx "$NGINX_VERSION"
+
+      - name: Build fuzz target
+        run: CC=clang bash ci/fuzz/build.sh
+
+      - name: Fuzz scan core
+        run: |
+          set -euo pipefail
+          cd ci/fuzz
+          echo "=== fuzz_scan (${FUZZ_SECS}s) ==="
+          set +e
+          ./fuzz_scan \
+            -max_total_time="$FUZZ_SECS" \
+            -max_len=16384 \
+            -dict=fuzz.dict \
+            -print_final_stats=1 \
+            -artifact_prefix="crash-fuzz_scan-" \
+            corpus/fuzz_scan
+          rc=$?
+          set -e
+          [ $rc -eq 0 ] || { echo "❌ fuzz_scan crash (exit $rc)"; exit 1; }
+          echo "✓ fuzz_scan: no crashes in ${FUZZ_SECS}s"
+          # Minimize + persist the merged corpus so the next run starts from the
+          # coverage this one found instead of from the committed seeds.
+          mkdir -p corpus-min/fuzz_scan
+          ./fuzz_scan -merge=1 corpus-min/fuzz_scan corpus/fuzz_scan || true
+          echo "merged: $(find corpus-min/fuzz_scan -type f | wc -l) units" \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      # On a crash this is the ONLY thing that makes the failure reproducible.
+      # Commit the artifact into ci/fuzz/regressions/ as part of the fix, so
+      # fuzzing.yml replays it forever after.
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: fuzz-deep-crashes
+          path: ${{ github.workspace }}/ci/fuzz/crash-*
+          retention-days: 30
+
+      - name: Upload minimized corpus
+        if: success()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: fuzz-corpus
+          path: ${{ github.workspace }}/ci/fuzz/corpus-min
+          retention-days: 30
+
+  memcheck:
+    name: Valgrind Memcheck soak
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 240
+    steps:
+      - name: Checkout module
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl libpcre2-dev zlib1g-dev valgrind
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          mode: debug
+          nginx-version: ${{ env.NGINX_VERSION }}
+
+      - name: Build debug nginx + module
+        run: bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" debug
+
+      - name: Memcheck soak (600s @ 4 conc, WITH suppressions)
+        env:
+          USE_VALGRIND: "1"
+        run: |
+          bash ci/tools/soak.sh \
+            "$GITHUB_WORKSPACE/.build/nginx-${NGINX_VERSION}-debug/objs/nginx" 600 4
+
+  helgrind:
+    name: Valgrind Helgrind soak
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 240
+    steps:
+      - name: Checkout module
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl libpcre2-dev zlib1g-dev valgrind
+
+      - name: Restore build caches
+        uses: ./.github/actions/build-cache
+        with:
+          mode: debug
+          nginx-version: ${{ env.NGINX_VERSION }}
+
+      - name: Build debug nginx + module
+        run: bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" debug
+
+      # Helgrind matters as soon as the module gains shared state (a shm zone, a
+      # cache, a counter). With a purely per-request scan it finds nothing -- keep
+      # it anyway, so the day shared state IS added the gate already exists.
+      - name: Helgrind soak (600s @ 4 conc, --error-exitcode=99)
+        env:
+          USE_HELGRIND: "1"
+        run: |
+          bash ci/tools/soak.sh \
+            "$GITHUB_WORKSPACE/.build/nginx-${NGINX_VERSION}-debug/objs/nginx" 600 4

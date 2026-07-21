@@ -1,0 +1,18 @@
+# Declare the self-hosted runner labels used in this repo.
+#
+# Without this, actionlint flags every `runs-on: [self-hosted, builder02, lxc]`
+# as an unknown label -- it only knows the GitHub-hosted set. That noise is why
+# the lint step is easy to ignore; declaring the labels makes a red actionlint
+# mean something again.
+#
+#   builder02 : the build host (self-hosted runner pool)
+#   lxc       : LXC-container runners -- pure build/CPU work, no Docker daemon
+#   b02lxc    : the b02-runner-0{1,2} subset of `lxc`, for jobs that are
+#               sensitive to runner timing (see nginx-label-autoconf-module)
+#   docker    : runners with a real Docker daemon, for container-based e2e
+self-hosted-runner:
+  labels:
+    - builder02
+    - lxc
+    - b02lxc
+    - docker
