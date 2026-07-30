@@ -56,7 +56,12 @@ ci/                        everything that only exists to test/build the module
     soak.sh                sustained matching/benign storm under valgrind/ASan
     valgrind.supp          nginx-core-only suppressions
     rename-module.sh       skel -> your name (delete after use)
-.github/workflows/         eight workflows, see below
+  linter/                  local lint gate, mirrors the CI thresholds
+  PROMPT-standardize-module.md  prompt: bring an existing module to this standard
+    run-all.sh             every checker; what the pre-commit hook runs
+    install-linters.sh     apt-get -> pipx -> cpan -> upstream binary
+.githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
+.github/workflows/         nine workflows, see below
 ```
 
 `ci/t/` uses the same `Test::Nginx::Socket` framework as upstream nginx's own
@@ -75,13 +80,34 @@ That split is why `ci/fuzz/fuzz_scan.c` can link and drive the *real* code path
 rather than a reimplementation of it. A fuzzer that tests a copy of the parser
 tests nothing; it just drifts from production quietly and reports green.
 
+## Linting
+
+`ci/linter/` is the local half of CI: nginx source conventions, C, shell,
+Python, Perl and workflow YAML, at the same thresholds the remote scanners
+gate on. It runs from a tracked pre-commit hook so a finding costs two seconds
+locally instead of a red PR.
+
+```sh
+ci/linter/install-linters.sh      # apt-get, then pipx/cpan for what apt lacks
+git config core.hooksPath .githooks
+ci/linter/run-all.sh              # or --staged, what the hook runs
+```
+
+Full setup (per-tool apt/pip/cpan commands, hook install, how the gate was
+verified red, how to extend it): **[ci/linter/README.md](ci/linter/README.md)**.
+
+`.githooks/pre-commit` replaces the `pre-commit`-framework hook if you enable
+it — `core.hooksPath` makes git ignore `.git/hooks/` entirely. Pick one; the
+linter README explains what each covers.
+
 ## CI
 
-Eight workflows. A failure surfaces as a red run plus the uploaded artifact — no
+Nine workflows. A failure surfaces as a red run plus the uploaded artifact — no
 chat notifications wired.
 
 | Workflow | Trigger | Gates |
 |---|---|---|
+| `lint.yml` | PR (via `ci.yml`) | the `ci/linter/` gate: nginx conventions, shellcheck, ruff, perlcritic + `perl -c`, yamllint, actionlint, **zizmor** (workflow security) — hosted runner, no self-hosted slot |
 | `build-test.yml` | PR + push | shellcheck/cppcheck/actionlint, build, **.so dlopens**, **bad config is rejected**, **`-T` survives merged multi-context config**, `-Werror` strict compile, Test::Nginx, ASan+UBSan, **rename smoke** |
 | `asan.yml` | PR + push (path-gated: `src/` + build/soak harness) | 60s ASan/UBSan request-storm soak (static `--add-module`) |
 | `fuzzing.yml` | PR + push | replay every past crash, then 120s fresh fuzz |
@@ -226,6 +252,8 @@ Build: `build-essential curl libpcre2-dev zlib1g-dev`
 Tests: `cpanminus` + `cpanm Test::Nginx`
 Fuzz: `clang` (needs `-fsanitize=fuzzer`)
 Soak: `valgrind`
+Lint: `ci/linter/install-linters.sh` (shellcheck, cppcheck, flawfinder,
+yamllint, clang-tidy, perlcritic, ruff, semgrep, actionlint, Test::Nginx)
 
 ## Contributing
 

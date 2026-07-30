@@ -20,18 +20,16 @@ name: CodeQL
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  NGINX_VERSION: "1.31.2"
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  # Triggered by ci.yml, which lanes the PR suite so peak runner use stays
+  # bounded. No push/pull_request trigger here on purpose: two entry points
+  # would run this twice per PR and defeat the laning.
+  workflow_call: {}
   schedule:
-    # Monthly, day 4 @ 04:47 UTC. Staggered away from ci-deep.yml (day 6) so the
-    # two heavy scheduled runs never contend for the same runners.
+    # Monthly, day 4 @ 04:47 UTC. Staggered away from ci-deep.yml (day 6) so
+    # the two heavy scheduled runs never contend for the same runners.
     - cron: "47 4 4 * *"
-  workflow_dispatch: {}
 
 concurrency:
   group: codeql-${{ github.ref }}
@@ -53,6 +51,9 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
 
       - name: Install build dependencies
         run: |

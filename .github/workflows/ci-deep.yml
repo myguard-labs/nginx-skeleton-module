@@ -30,7 +30,6 @@ name: CI Deep
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  NGINX_VERSION: "1.31.2"
 
 on:
   schedule:
@@ -52,27 +51,36 @@ permissions:
 
 jobs:
   build-flavors:
-    name: Build & Test::Nginx (${{ matrix.flavor }} ${{ matrix.version }})
+    # matrix.label, not the version: the job name is evaluated before any step
+    # runs, so the resolved version is not available here.
+    name: Build & Test::Nginx (${{ matrix.flavor }} ${{ matrix.label }})
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      # A matrix is expanded before any step runs, so load-versions.sh cannot
+      # feed it. Each cell therefore names the versions.env KEY it wants, and
+      # the build step dereferences it after the pins are loaded -- keeping the
+      # versions themselves in one file instead of re-hardcoding them here.
       matrix:
         include:
           - flavor: nginx
-            version: "1.31.2"
+            version_key: NGINX_MAINLINE
             label: mainline
           - flavor: nginx
-            version: "1.30.3"
+            version_key: NGINX_STABLE
             label: stable
           - flavor: angie
-            version: "1.12.0"
+            version_key: ANGIE_VERSION
             label: angie
     steps:
       - name: Checkout module
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
 
       - name: Install dependencies
         run: |
@@ -82,28 +90,67 @@ jobs:
             cpanminus libio-socket-ssl-perl
           sudo cpanm --notest --quiet Test::Nginx
 
+      - name: Resolve matrix version
+        # The cell names a versions.env key (NGINX_MAINLINE/NGINX_STABLE/
+        # ANGIE_VERSION); dereference it now that load-versions.sh has put the
+        # pins in the environment, so later steps can use env.MATRIX_VERSION.
+        env:
+          # Through env, not inline ${{ }}: an expression expanded straight into
+          # a run: block is template injection (zizmor template-injection). The
+          # matrix values are repo-controlled today, but the safe shape costs
+          # nothing and stops the pattern from being copied somewhere it is not.
+          MATRIX_VERSION_KEY: ${{ matrix.version_key }}
+        run: |
+          key="$MATRIX_VERSION_KEY"
+          value="${!key:-}"
+          if [ -z "$value" ]; then
+            echo "::error::$key is not set in .github/versions.env"
+            exit 1
+          fi
+          echo "MATRIX_VERSION=$value" >> "$GITHUB_ENV"
+          echo "resolved $key=$value"
+
       - name: Restore build caches
         uses: ./.github/actions/build-cache
         with:
           mode: debug
           flavor: ${{ matrix.flavor }}
-          nginx-version: ${{ matrix.version }}
+          nginx-version: ${{ env.MATRIX_VERSION }}
 
       - name: Build server and dynamic module
+        # angie names its binary objs/angie, nginx names it objs/nginx. Assert
+        # BOTH artifacts and export the server path, so the flavor's real binary
+        # name lives in one place instead of being hardcoded per step -- checking
+        # only the .so passes for angie while leaving the server unverified.
+        env:
+          MATRIX_FLAVOR: ${{ matrix.flavor }}   # via env, see the note above
         run: |
-          bash ci/tools/ci-build.sh "${{ matrix.flavor }}" "${{ matrix.version }}"
-          build=".build/${{ matrix.flavor }}-${{ matrix.version }}-debug/objs"
+          set -euo pipefail
+          bash ci/tools/ci-build.sh "$MATRIX_FLAVOR" "$MATRIX_VERSION"
+          build=".build/$MATRIX_FLAVOR-${MATRIX_VERSION}-debug/objs"
+          case "$MATRIX_FLAVOR" in
+              angie) server="$build/angie" ;;
+              *)     server="$build/nginx" ;;
+          esac
           test -f "$build/ngx_http_skel_module.so"
+          test -x "$server"
+          echo "SERVER_BIN=$GITHUB_WORKSPACE/$server" >> "$GITHUB_ENV"
+          echo "MODULE_SO=$GITHUB_WORKSPACE/$build/ngx_http_skel_module.so" >> "$GITHUB_ENV"
 
       - name: Run ci/t/
         env:
-          TEST_NGINX_BINARY: ${{ github.workspace }}/.build/${{ matrix.flavor }}-${{ matrix.version }}-debug/objs/nginx
-          TEST_NGINX_LOAD_MODULES: ${{ github.workspace }}/.build/${{ matrix.flavor }}-${{ matrix.version }}-debug/objs/ngx_http_skel_module.so
+          # Set by the build step above -- it resolves the flavor's binary name
+          # (angie vs nginx) once, after the version is known.
+          TEST_NGINX_BINARY: ${{ env.SERVER_BIN }}
+          TEST_NGINX_LOAD_MODULES: ${{ env.MODULE_SO }}
           # See build-test.yml's identical setting for why this must be 20, not
           # the ~2s Test::Nginx::Socket default.
           TEST_NGINX_TIMEOUT: "20"
           TEST_NGINX_SERVROOT: ${{ github.workspace }}/ci/t/servroot
-        run: prove -v ci/t/
+        # Test::Nginx probes a server on PATH for its version and Bailouts if it
+        # finds none -- TEST_NGINX_BINARY alone does not satisfy that probe, so
+        # the objs/ dir goes on PATH too.
+        run: PATH="$(dirname "$TEST_NGINX_BINARY"):$PATH" prove -v ci/t/
 
   fuzz:
     name: Fuzz (scan core, long)
@@ -114,6 +161,9 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
 
       - name: Install build deps
         run: |
@@ -199,6 +249,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -230,6 +283,9 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
 
       - name: Install dependencies
         run: |

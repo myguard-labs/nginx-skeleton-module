@@ -20,26 +20,12 @@ name: A/UBSan
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  NGINX_VERSION: "1.31.2"
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "ci/t/**"
-      - "ci/tools/ci-build.sh"
-      - "ci/tools/soak.sh"
-      - ".github/workflows/asan.yml"
-  pull_request:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "ci/t/**"
-      - "ci/tools/ci-build.sh"
-      - "ci/tools/soak.sh"
-      - ".github/workflows/asan.yml"
-  workflow_dispatch: {}
+  # Triggered by ci.yml, which lanes the PR suite so peak runner use stays
+  # bounded. No push/pull_request trigger here on purpose: two entry points
+  # would run this twice per PR and defeat the laning.
+  workflow_call: {}
 
 concurrency:
   group: asan-${{ github.workflow }}-${{ github.ref }}
@@ -58,6 +44,9 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
 
       - name: Install dependencies
         run: |

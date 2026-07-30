@@ -9,10 +9,19 @@ name: Security scanners
 #                  to ignore it.
 #   clang-tidy  -- blocks on cert-* and clang-analyzer-security.*. These are
 #                  path-sensitive and near-zero-FP on code this size.
-#   semgrep     -- ADVISORY (|| true). It is the highest-FP of the three; its
-#                  value is the uploaded report a human reads, not a red X. If a
-#                  semgrep rule earns its keep, promote it to blocking here
-#                  deliberately -- do not leave it advisory forever by default.
+#   semgrep     -- blocks at WARNING and above; INFO stays advisory. Promoted
+#                  from fully-advisory 2026-07-30.
+#                  WARNING, not ERROR, is the gate level on purpose: the
+#                  registry's ERROR tier has no C rules that fire on this kind
+#                  of code (verified -- an ERROR-only gate matched 48 rules and
+#                  0 findings against a deliberate strcpy/format-string file,
+#                  i.e. it could never go red). WARNING is the lowest tier with
+#                  real signal: it catches that same file via
+#                  insecure-use-string-copy-fn. src/ is clean at WARNING+ today,
+#                  so this goes in green.
+#                  Registry C coverage is thin either way (~9 rules reach these
+#                  files) -- semgrep is the third line here, behind flawfinder
+#                  and clang-tidy, which carry the real C weight.
 #
 # Action pins (keep in sync with build-test.yml):
 # actions/checkout@v5        -> 93cb6efe18208431cddfb8368fd83d5badbf9bfd
@@ -20,14 +29,12 @@ name: Security scanners
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  NGINX_VERSION: "1.31.2"
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch: {}
+  # Triggered by ci.yml, which lanes the PR suite so peak runner use stays
+  # bounded. No push/pull_request trigger here on purpose: two entry points
+  # would run this twice per PR and defeat the laning.
+  workflow_call: {}
 
 concurrency:
   group: security-scanners-${{ github.workflow }}-${{ github.ref }}
@@ -46,6 +53,9 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
 
       - name: Install dependencies
         run: |
@@ -112,11 +122,37 @@ jobs:
           done
           exit "$status"
 
-      - name: semgrep (advisory)
+      - name: semgrep (gate on >=WARNING)
         run: |
+          set -euo pipefail
           command -v semgrep >/dev/null || { echo "semgrep missing from PATH" >&2; exit 1; }
+          # --jobs=1 is a correctness flag on a self-hosted runner, not a speed
+          # flag. semgrep-core defaults to one OCaml domain per core (32 on this
+          # box), each opening an io_uring ring against an 8 MB RLIMIT_MEMLOCK
+          # shared with every other job on the host. Under runner load it
+          # exhausts and semgrep-core dies with `Unix_error: Cannot allocate
+          # memory io_uring_queue_init` -> exit 2, i.e. a load-dependent red
+          # that has nothing to do with the code under review. Reproduced 3/3 on
+          # a busy box and 0/3 on an idle one. src/ is three files, so the
+          # parallelism was buying nothing. ci/linter/lint-c.sh carries the same
+          # flag -- keep the two in sync or local stops predicting remote.
+          # --metrics=off drops the scan-summary POST (2.76s -> 1.27s measured).
+          #
+          # Pass 1: full scan, every severity, never blocking. This is what
+          # lands in the uploaded artifact for a human to read -- INFO findings
+          # stay visible even though they do not gate.
           semgrep scan --config p/c --config p/security-audit \
+            --jobs=1 --metrics=off \
             "$GITHUB_WORKSPACE/src/" 2>&1 | tee semgrep.log || true
+          # Pass 2: the gate. --error makes semgrep exit 1 on any match at
+          # WARNING or ERROR. Exit 2 (fatal: bad config, network, parse error)
+          # also fails the step rather than passing silently -- a scanner that
+          # could not run is not a clean scan.
+          semgrep scan --config p/c --config p/security-audit \
+            --severity=WARNING --severity=ERROR --error \
+            --jobs=1 --metrics=off \
+            "$GITHUB_WORKSPACE/src/" 2>&1 | tee -a semgrep.log
+          echo "semgrep: clean at >=WARNING"
 
       - name: Upload reports
         if: always()

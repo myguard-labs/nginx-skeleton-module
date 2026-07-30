@@ -56,8 +56,38 @@
 set -euo pipefail
 
 FLAVOR="${1:-nginx}"
-VERSION="${2:-1.31.2}"
 MODE="${3:-debug}"
+
+# Version pins (and their sha256s) all come from .github/versions.env -- see
+# the integrity block below. Sourced this early so the default version tracks
+# the pinned one instead of being a literal that silently rots.
+VERSIONS_FILE="${VERSIONS_FILE:-$PWD/.github/versions.env}"
+if [ ! -f "$VERSIONS_FILE" ]; then
+    echo "FATAL: $VERSIONS_FILE not found (run from the module root)" >&2
+    exit 1
+fi
+# Validate before sourcing. load-versions.sh applies the same KEY=value check
+# on the CI side, but this script `source`s the file directly -- so without a
+# check here, a stray line that is not a pin would be executed as shell rather
+# than rejected. Same rule enforced in both consumers.
+while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+        ''|\#*) continue ;;
+    esac
+    if ! printf '%s' "$line" | grep -qE '^[A-Za-z_][A-Za-z0-9_]*=[A-Za-z0-9._-]*$'; then
+        echo "FATAL: malformed line in $VERSIONS_FILE: $line" >&2
+        exit 1
+    fi
+done < "$VERSIONS_FILE"
+# shellcheck source=/dev/null
+. "$VERSIONS_FILE"
+
+case "$FLAVOR" in
+    nginx) DEFAULT_VERSION="$NGINX_VERSION" ;;
+    angie) DEFAULT_VERSION="$ANGIE_VERSION" ;;
+    *)     DEFAULT_VERSION="" ;;
+esac
+VERSION="${2:-$DEFAULT_VERSION}"
 
 case "$MODE" in
     debug|asan|module) ;;
@@ -87,61 +117,70 @@ esac
 
 NO_CACHE="${NO_CACHE:-0}"
 
-# --- integrity: pinned SHA-256 for nginx tarballs we've actually verified ---
+# --- integrity: sha256 pins come from .github/versions.env -------------------
 # nginx.org serves plain HTTP-adjacent PGP signatures, not a sha256sum file, so
 # "verify against the vendor" means pinning a known-good digest for each source
-# tarball we build, computed once from a tarball fetched over HTTPS from
-# nginx.org and recorded here -- not fabricated. A version not in this table
-# builds anyway (this skeleton tracks a moving nginx release, and refusing to
-# build an unpinned version would break every future version bump until someone
-# updates this table first) but prints a loud warning instead of silently
-# skipping verification, so the gap is visible rather than assumed-safe.
-declare -A NGINX_SHA256=(
-    ["1.31.1"]="9fcaaeb8f22544b09a19a761f3412c4112215422401634bebdd1296a403cc4bc"
-    ["1.31.2"]="af2a957c41da636ddc4f883e4523c6d140b4784dbce42000c364ae5092aa473c"
-    ["1.30.3"]="e5823dc6f45610993def93ebf6cfce68264af4958c77e874b7d20f3709001b8f"
-)
+# tarball we build. Those digests used to live in a table right here, which put
+# the version (in seven workflow files) and its digest (here) in different
+# places under different writers -- so a bumped version with a stale digest was
+# a live failure mode. Both now live on adjacent lines in .github/versions.env,
+# written by one tool (.github/scripts/compute-versions.sh).
+#
+# Verification is MANDATORY: a version with no digest here is a hard failure,
+# not a warning. compute-versions.sh always emits version+digest together, so
+# the only way to reach this error is a hand-edit that half-did the job.
+#
+# (versions.env was already sourced near the top, to default $VERSION.)
+#
+# Pick the digest matching the flavor+version being built. The single-version
+# jobs all build NGINX_VERSION; ci-deep's matrix also builds NGINX_STABLE and
+# ANGIE_VERSION. Anything else has no pin and must not be built silently.
+EXPECTED=""
+if [ -z "$VERSION" ]; then
+    # Guard before the case below: an empty $VERSION would match an empty
+    # "${NGINX_STABLE:-}" pattern and silently adopt the wrong digest.
+    echo "FATAL: no version given and no default pin for flavor '$FLAVOR'" >&2
+    exit 1
+fi
+case "$FLAVOR" in
+    nginx)
+        case "$VERSION" in
+            "${NGINX_VERSION:-}")  EXPECTED="${NGINX_VERSION_SHA256:-}" ;;
+            "${NGINX_MAINLINE:-}") EXPECTED="${NGINX_MAINLINE_SHA256:-}" ;;
+            "${NGINX_STABLE:-}")   EXPECTED="${NGINX_STABLE_SHA256:-}" ;;
+        esac
+        ;;
+    angie)
+        case "$VERSION" in
+            "${ANGIE_VERSION:-}") EXPECTED="${ANGIE_SHA256:-}" ;;
+        esac
+        ;;
+esac
 
-# Same idea as NGINX_SHA256, for the angie flavor.
-declare -A ANGIE_SHA256=(
-    ["1.12.0"]="cd7867d200b22a80165b93696c30a1ac3a28c1162544b7f43c71232b19814ef6"
-)
+if [ -z "$EXPECTED" ]; then
+    echo "FATAL: no pinned sha256 for $FLAVOR $VERSION" >&2
+    echo "  $VERSIONS_FILE pins:" >&2
+    echo "    nginx  ${NGINX_VERSION:-?} (mainline ${NGINX_MAINLINE:-?}, stable ${NGINX_STABLE:-?})" >&2
+    echo "    angie  ${ANGIE_VERSION:-?}" >&2
+    echo "  Regenerate it with .github/scripts/compute-versions.sh, or add the" >&2
+    echo "  version + its sha256 there -- never build an unverified tarball." >&2
+    exit 1
+fi
 
 # The mode is in the tree path. See the CACHING block above -- sharing one tree
 # across modes is what lets a cached debug objs/ silently disarm the asan job.
 SRCDIR="$ROOT/${DIR}-${MODE}"
 
 mkdir -p "$ROOT"
-if [ ! -f "$ROOT/${DIR}.tar.gz" ]; then
-    curl -fsSL "$URL" -o "$ROOT/${DIR}.tar.gz"
-
-    # A fresh download is the only time a bad tarball can enter the cache, so
-    # this is where verification belongs -- a tarball already sitting in
-    # .build/ from a prior verified run doesn't need re-checking every
-    # invocation. Pinned digests are computed once from an HTTPS fetch and
-    # recorded in NGINX_SHA256/ANGIE_SHA256 above; this is a stopgap for
-    # nginx.org's plain HTTP-adjacent PGP signatures (not a sha256sum file) --
-    # see https://nginx.org/en/pgp_keys.html for the upstream-recommended
-    # `gpg --verify` method against nginx's published release-signing keys.
-    case "$FLAVOR" in
-        nginx) EXPECTED="${NGINX_SHA256[$VERSION]:-}" ;;
-        angie) EXPECTED="${ANGIE_SHA256[$VERSION]:-}" ;;
-    esac
-    if [ -n "$EXPECTED" ]; then
-        ACTUAL="$(sha256sum "$ROOT/${DIR}.tar.gz" | awk '{print $1}')"
-        if [ "$ACTUAL" != "$EXPECTED" ]; then
-            echo "FATAL: sha256 mismatch for ${DIR}.tar.gz" >&2
-            echo "  expected: $EXPECTED" >&2
-            echo "  actual:   $ACTUAL" >&2
-            rm -f "$ROOT/${DIR}.tar.gz"
-            exit 1
-        fi
-        echo "sha256: OK ($VERSION)"
-    else
-        echo "WARNING: no pinned sha256 for $FLAVOR $VERSION -- add one to" \
-             "${FLAVOR^^}_SHA256 in tools/ci-build.sh (downloaded tarball is" \
-             "UNVERIFIED)" >&2
-    fi
+# fetch-verify.sh downloads (with retries/timeouts) and checks the digest. It
+# re-checks a tarball already present in .build/ rather than trusting it, so a
+# poisoned build cache is caught too -- and deletes nothing it did not verify.
+if ! bash "$MODULE_DIR/.github/scripts/fetch-verify.sh" \
+        "$URL" "$EXPECTED" "$ROOT/${DIR}.tar.gz"; then
+    # A tarball that fails verification must not survive to be picked up as a
+    # "cache hit" by the next run.
+    rm -f "$ROOT/${DIR}.tar.gz"
+    exit 1
 fi
 if [ "$NO_CACHE" = "1" ]; then
     rm -rf "$SRCDIR"
@@ -151,8 +190,18 @@ if [ ! -d "$SRCDIR" ]; then
     mv "$ROOT/$DIR" "$SRCDIR"
 fi
 
-# Strict flags: this is hostile-input parser code, so warnings are errors.
-CC_OPT="-g -Wall -Wextra -Wshadow"
+# Whole-tree flags: --with-cc-opt lands in CFLAGS for EVERY object configure
+# compiles -- the upstream core included, not just our module. So only warnings
+# that upstream is expected to be clean under belong here.
+#
+# -Wshadow deliberately does NOT: angie's configure puts -Werror in its own
+# default CFLAGS, so -Wshadow here turns shadow warnings in ANGIE's sources
+# (ngx_http_client_module.c, ngx_http_prometheus_module.c) into hard build
+# failures in code we neither own nor patch. Our own sources ARE kept clean
+# under -Wshadow -Werror by the "Strict module compile" step in build-test.yml,
+# which applies the full strict set to src/*.c alone -- that is the right place
+# for it, and the reason this list is the laxer one.
+CC_OPT="-g -Wall -Wextra"
 LD_OPT=""
 ADD_MODULE="--add-dynamic-module=$MODULE_DIR"
 
