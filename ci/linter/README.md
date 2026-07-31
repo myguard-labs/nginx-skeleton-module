@@ -55,12 +55,14 @@ externally-managed, so a bare `pip3 install` fails and
 `--break-system-packages` is a worse answer than a venv per tool.
 
 ```sh
-pipx install ruff
+pipx install 'ruff==0.16.1'         # pinned to the CI version on purpose
 pipx install 'semgrep==1.169.0'     # pinned to the CI version on purpose
 ```
 
-`semgrep` is pinned because an unpinned upgrade changes findings under you and
-local stops matching CI. Bump it here and in `security-scanners.yml` together.
+`ruff` and `semgrep` are pinned because an unpinned upgrade changes findings
+under you and local stops matching CI. Bump each here and in its CI consumer
+together -- `ruff` in `install-linters.sh`, `semgrep` in
+`security-scanners.yml` too.
 
 **cpan (Perl modules apt does not carry on every target release)**
 
@@ -76,9 +78,9 @@ an install step has no business demanding.
 pipx install zizmor                 # GitHub Actions security audit
 ```
 
-`zizmor` is deliberately **not** pinned, unlike semgrep: its rule set is the
-whole point, and a frozen security scanner stops finding what it was added for.
-A new rule going red is a finding to triage, not drift to suppress.
+`zizmor` is deliberately **not** pinned, unlike ruff and semgrep: its rule set
+is the whole point, and a frozen security scanner stops finding what it was
+added for. A new rule going red is a finding to triage, not drift to suppress.
 
 **upstream binary (no apt/pip/cpan source)**
 

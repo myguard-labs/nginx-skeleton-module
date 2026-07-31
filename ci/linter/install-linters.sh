@@ -50,7 +50,10 @@ APT_TOOLS=(
 # bare `pip3 install` fails on Debian 12+ and `--break-system-packages` is a
 # worse answer than an isolated venv per tool.
 PIPX_TOOLS=(
-    "ruff:ruff"                       # Python lint + format check
+    "ruff:ruff==0.16.1"                # Python lint + format check, pinned:
+                                      # an unpinned ruff changes findings under
+                                      # you and local stops matching CI, same
+                                      # reasoning as the semgrep pin below.
     "zizmor:zizmor"                   # GitHub Actions security audit. Not
                                       # pinned: its rule set is the point, and a
                                       # frozen security scanner stops finding
