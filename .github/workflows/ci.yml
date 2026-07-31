@@ -75,9 +75,9 @@ permissions:
 
 jobs:
   # --- lane A: the budget-setting job, alone -------------------------------
-  # Nothing follows Fuzzing. At 268s it is the longest job in the suite, so the
-  # suite cannot finish sooner; anything chained behind it is pure added
-  # critical path. Security scanners used to sit here and cost exactly that.
+  # Nothing follows Fuzzing. It is the longest job in the suite, so the suite
+  # cannot finish sooner; anything chained behind it is pure added critical
+  # path. Security scanners used to sit here and cost exactly that.
   fuzzing:
     name: Fuzzing
     permissions:
@@ -152,9 +152,9 @@ jobs:
 
   security-scanners:
     name: Security scanners
-    # Tail of lane B, not of lane A. 94 + 83 + 77 = 254s still fits under the
-    # 268s fuzzing budget, so these 77s are free here and were critical path
-    # there.
+    # Tail of lane B, not of lane A. The lane still fits under the fuzzing
+    # budget, so this job is free here and was critical path there. Header has
+    # the measured spread; lane B has less room than it looks.
     needs: valgrind
     if: ${{ !cancelled() }}
     permissions:

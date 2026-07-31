@@ -45,16 +45,30 @@
 
 # Fuzz corpus files are byte-exact test inputs: a stripped space or an added
 # newline changes what is actually fuzzed. Never let a fixer touch them.
-exclude: '^ci/fuzz/corpus/|^ci/fuzz/regressions/|\.traefik-ref/|\.claude/worktrees/|\.build/|(^|/)objs/|(^|/)vendor/|(^|/)node_modules/|(^|/)\.venv/|\.(bin|gz|zip|png|ico|der|pem|so|o|a)$'
+#
+# .pem and .der are NOT in this list, deliberately. pre-commit applies the
+# top-level exclude before any per-hook rule, so a suffix named here is
+# invisible to EVERY hook -- including detect-private-key, whose entire job is
+# catching a .pem. Verified: an identical fake key reads "(no files to check)
+# Skipped" as probe.pem and "Private key found" as probe.txt. They are excluded
+# per-hook on the three fixers below instead, which is the only reason they were
+# ever in this list.
+exclude: '^ci/fuzz/corpus/|^ci/fuzz/regressions/|\.traefik-ref/|\.claude/worktrees/|\.build/|(^|/)objs/|(^|/)vendor/|(^|/)node_modules/|(^|/)\.venv/|\.(bin|gz|zip|png|ico|so|o|a)$'
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      # The three fixers rewrite files in place, which is why keys and DER blobs
+      # have to stay out of their reach. Per-hook, not top-level: a top-level
+      # exclude would also blind detect-private-key below.
       - id: trailing-whitespace
+        exclude: '\.(pem|der)$'
       - id: end-of-file-fixer
+        exclude: '\.(pem|der)$'
       - id: mixed-line-ending
         args: [--fix=lf]
+        exclude: '\.(pem|der)$'
       - id: check-merge-conflict
       - id: check-yaml
       - id: check-added-large-files
