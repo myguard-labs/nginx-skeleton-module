@@ -118,9 +118,13 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        # Present on the builder02 runners already; installed only on a hosted
-        # runner (codeql.yml). Cheap to check, and it keeps the template
-        # portable to a fresh runner image.
+        # Present on the builder02 runners already. The install path is for a
+        # hosted runner, which every consumer of this action reaches the same
+        # way: `runs-on` falls back to ubuntu-latest when
+        # github.event.pull_request.head.repo.fork is true. (codeql.yml is not
+        # one of them -- it does not use this action, because ccache serving a
+        # hit without running cc is incompatible with CodeQL's tracer.) Cheap
+        # to check, and it keeps the template portable to a fresh runner image.
         need=()
         for pkg in ccache mold eatmydata; do
           command -v "$pkg" >/dev/null || need+=("$pkg")
