@@ -287,8 +287,18 @@ STAMP="objs/.conf-stamp"
 # cached by build-tree/ccache and later restored into other jobs -- durability
 # matters there) and anything outside this script (tarball fetch/verify,
 # apt-get installs in the calling workflow).
+# Skipped under asan for a harder reason than mold's: eatmydata works by
+# LD_PRELOAD-ing libeatmydata.so, and an ASan-instrumented binary aborts unless
+# the ASan runtime is first in the preload list. Every one of configure's probe
+# binaries is instrumented in asan mode, so they all die at startup and
+# configure reports the symptom rather than the cause:
+#     ==2722==ASan runtime does not come first in initial library list
+#     ./configure: error: can not detect int size
+# (CI run 30630376885, before this guard existed.) Any future LD_PRELOAD shim
+# added here needs the same gate.
 EATMYDATA=""
-if [ "$NO_CACHE" != "1" ] && command -v eatmydata >/dev/null 2>&1; then
+if [ "$NO_CACHE" != "1" ] && [ "$MODE" != "asan" ] \
+   && command -v eatmydata >/dev/null 2>&1; then
     EATMYDATA="eatmydata"
 fi
 
