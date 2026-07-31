@@ -96,7 +96,18 @@ runs:
         key: >-
           buildtree-${{ runner.os }}-${{ inputs.mode }}-${{ inputs.flavor }}-${{ inputs.nginx-version }}-${{ hashFiles('ci/tools/ci-build.sh', 'config', 'src/**') }}
 
-    - name: Ensure ccache and mold are present
+    # Package layer: check-before-install, not a real apt cache. actions/cache
+    # cannot safely cache /var/lib/dpkg (system-wide, shared across every job
+    # on the same persistent runner, and a stale restore can desync dpkg's own
+    # state) -- so there is no honest way to "cache" these three packages
+    # beyond not reinstalling ones already there. On builder02 (persistent
+    # self-hosted) that's every run after the first: `dpkg -s` is a few ms,
+    # `apt-get update` is a network round-trip. On a hosted or freshly-rotated
+    # ephemeral runner this still falls through to install, same as before --
+    # the honest fix for THAT case is a pre-baked runner image, not a cache
+    # layer bolted onto this script (out of scope here; see the CI notes for
+    # the ephemeral-conversion plan).
+    - name: Ensure ccache, mold and eatmydata are present
       shell: bash
       run: |
         set -euo pipefail
@@ -104,8 +115,9 @@ runs:
         # runner (codeql.yml). Cheap to check, and it keeps the template
         # portable to a fresh runner image.
         need=()
-        command -v ccache >/dev/null || need+=(ccache)
-        command -v mold   >/dev/null || need+=(mold)
+        for pkg in ccache mold eatmydata; do
+          dpkg -s "$pkg" >/dev/null 2>&1 || need+=("$pkg")
+        done
         if [ ${#need[@]} -gt 0 ]; then
           sudo apt-get update
           sudo apt-get install -y "${need[@]}"

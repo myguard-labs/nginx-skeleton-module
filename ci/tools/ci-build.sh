@@ -48,6 +48,17 @@
 #                       ccache CANNOT help with; on this codebase configure is
 #                       the dominant cost, not compilation).
 #   4. the source tarball -- see the workflows' actions/cache step.
+#   5. eatmydata     -- wraps ./configure ONLY (see the block right before it
+#                       for why make is excluded); disables fsync for scratch
+#                       files configure churns through, never for compiled
+#                       output.
+#
+# apt/package installs are NOT cached here: builder02's runners are
+# persistent, so ccache/mold/eatmydata are dpkg-checked and skipped (not
+# reinstalled) by .github/actions/build-cache -- see its "Ensure ccache, mold
+# and eatmydata are present" step. There is no honest actions/cache layer for
+# a shared system dpkg database; if the runners go ephemeral, a pre-baked
+# image is the right fix, not a cache bolted on here.
 #
 # Everything is opt-out via NO_CACHE=1, so a job can force a from-scratch
 # build (release verification) without editing this script.
@@ -256,11 +267,34 @@ cd "$SRCDIR"
 CONF_ARGS="--with-compat --with-cc=${WITH_CC} --with-cc-opt=${CC_OPT} --with-ld-opt=${LD_OPT} ${ADD_MODULE}"
 STAMP="objs/.conf-stamp"
 
+# --- eatmydata -----------------------------------------------------------
+# configure does tiny writes+fsyncs (probe files, autoconf.err, Makefile
+# fragments) that ccache cannot touch and that gain nothing from durability --
+# objs/ is scratch, rebuilt from src/ on any failure, never the thing a crash
+# needs to recover. eatmydata disables fsync for the child process only, so a
+# host crash mid-configure just means "run it again", same as any interrupted
+# build. Measured on builder02 (SSD-backed incus container, so fsync was
+# already cheap): 3x runs plain vs 3x wrapped, ~3.6s either way -- no
+# measurable win on THIS host/filesystem, within run-to-run noise. Kept
+# anyway because it is a correct, load-bearing-safe no-op here and a real win
+# on slower/spinning-disk or heavily fsync-throttled runners (the reason it's
+# in the standardization doc's caching table at all) -- cost to keep it is
+# one already-installed binary and a few bytes of shell.
+#
+# Deliberately NOT wrapped: `make` (the actual compiled objects are what gets
+# cached by build-tree/ccache and later restored into other jobs -- durability
+# matters there) and anything outside this script (tarball fetch/verify,
+# apt-get installs in the calling workflow).
+EATMYDATA=""
+if [ "$NO_CACHE" != "1" ] && command -v eatmydata >/dev/null 2>&1; then
+    EATMYDATA="eatmydata"
+fi
+
 if [ "$NO_CACHE" != "1" ] && [ -f objs/Makefile ] && [ -f "$STAMP" ] \
    && [ "$(cat "$STAMP")" = "$CONF_ARGS" ]; then
     echo "configure: cached (identical flags) -- skipping"
 else
-    ./configure \
+    $EATMYDATA ./configure \
         --with-compat \
         --with-cc="$WITH_CC" \
         --with-cc-opt="$CC_OPT" \
