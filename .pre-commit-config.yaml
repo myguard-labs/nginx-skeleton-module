@@ -107,12 +107,21 @@ repos:
       # CI workflows are code that breaks silently; actionlint catches bad if:
       # expressions, unknown contexts and shell errors inside run: blocks.
       #
+      # -config-file: declares our self-hosted-runner labels (builder02, lxc,
+      # b02lxc, docker) explicitly rather than relying on actionlint finding
+      # .github/actionlint.yaml by cwd-guessing -- pre-commit hooks don't
+      # guarantee cwd the way a bare `actionlint` invocation from a shell does.
+      #
       # -ignore runner-label: actionlint 1.7.7 ships a FIXED list of GitHub
-      # runner images and flags anything newer as "unknown label". Several
-      # repos legitimately target ubuntu-26.04 / ubuntu-26.04-arm, which that
-      # version has never heard of. Every such report is a false positive about
-      # the linter's age, not the workflow, and leaving it on lands this hook
-      # red on arrival. Drop this ignore once actionlint is new enough.
+      # *hosted* runner images and flags anything newer as "unknown label".
+      # That's a different gap than the self-hosted labels above -- there's no
+      # config-file section for "GitHub-hosted images this actionlint release
+      # doesn't know yet" -- so this stays even with the config file wired in.
+      # Several repos legitimately target ubuntu-26.04 / ubuntu-26.04-arm,
+      # which that version has never heard of. Every such report is a false
+      # positive about the linter's age, not the workflow, and leaving it on
+      # lands this hook red on arrival. Drop this ignore once actionlint is
+      # new enough.
       #
       # SHELLCHECK_OPTS applies to the shellcheck actionlint runs over `run:`
       # blocks. Without it that embedded pass reports at INFO while the
@@ -121,7 +130,7 @@ repos:
       # in both places.
       - id: actionlint
         name: actionlint (workflow syntax)
-        entry: env SHELLCHECK_OPTS=-Swarning actionlint -ignore 'label ".+" is unknown'
+        entry: env SHELLCHECK_OPTS=-Swarning actionlint -config-file .github/actionlint.yaml -ignore 'label ".+" is unknown'
         language: system
         files: ^\.github/workflows/.*\.ya?ml$
         pass_filenames: true
