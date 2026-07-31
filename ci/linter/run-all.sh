@@ -55,14 +55,29 @@ echo "== lint (mode: $MODE) =="
 
 # Selected checkers, in glob order. Built first so the replay loop below can
 # walk the same list it launched.
+ALL=()
 SEL=()
 for s in ci/linter/lint-*.sh; do
     name="$(basename "$s" .sh)"; name="${name#lint-}"
+    ALL+=("$name")
     if [ -n "${LINT_ONLY:-}" ] && [[ " $LINT_ONLY " != *" $name "* ]]; then
         continue
     fi
     SEL+=("$name")
 done
+
+# An empty selection is "could not run", never "clean". A typo in LINT_ONLY
+# used to leave both loops below iterating zero times, printing "all linters
+# clean" and exiting 0 -- a gate that silently lints nothing is worse than no
+# gate. Same exit 2 as a missing linter.
+if [ "${#SEL[@]}" -eq 0 ]; then
+    if [ "${#ALL[@]}" -eq 0 ]; then
+        echo "no ci/linter/lint-*.sh found -- wrong tree?" >&2
+    else
+        echo "LINT_ONLY=\"${LINT_ONLY:-}\" matched no checker; known: ${ALL[*]}" >&2
+    fi
+    exit 2
+fi
 
 JOBS="${LINT_JOBS:-0}"
 [ "$JOBS" -eq 0 ] 2>/dev/null && JOBS="${#SEL[@]}"

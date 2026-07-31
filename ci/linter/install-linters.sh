@@ -122,12 +122,27 @@ done
 
 install_actionlint() {
     # No apt package on the target releases and no pip/cpan equivalent: a Go
-    # binary from the upstream release, pinned, checksum-visible in the log.
-    local ver="1.7.7" tmp
+    # binary from the upstream release, pinned by version AND sha256.
+    #
+    # The digest is COMPARED, not printed. Printing `sha256sum` and moving on
+    # reads as a verification step but installs whatever arrived -- worse than
+    # no check, because it stops anyone from adding a real one. Version and
+    # digest sit on adjacent lines for the same reason .github/versions.env
+    # does it: a version must not be able to move while its digest stays behind.
+    # From the upstream release's actionlint_<ver>_checksums.txt.
+    local ver="1.7.7"
+    local sha="023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+    local tmp
     tmp="$(mktemp -d)"
     curl -fsSL -o "$tmp/al.tgz" \
         "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz" || return 1
-    sha256sum "$tmp/al.tgz"
+    if ! printf '%s  %s\n' "$sha" "$tmp/al.tgz" | sha256sum -c - >/dev/null 2>&1; then
+        echo "actionlint ${ver}: sha256 mismatch" >&2
+        echo "  expected: $sha" >&2
+        echo "  got:      $(sha256sum < "$tmp/al.tgz" | cut -d' ' -f1)" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
     tar -xzf "$tmp/al.tgz" -C "$tmp" actionlint || return 1
     $SUDO install -m0755 "$tmp/actionlint" /usr/local/bin/actionlint || return 1
     rm -rf "$tmp"

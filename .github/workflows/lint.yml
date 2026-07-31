@@ -53,6 +53,13 @@ jobs:
         # WHICH one before the findings scroll past.
         run: ci/linter/install-linters.sh --check
 
+      - name: Selftest the gate
+        # Before trusting the next step's verdict, prove the gate can still say
+        # no: a selector that matches nothing must exit 2, not report clean.
+        # The step below narrows the run with LINT_ONLY, so a silent selector
+        # is exactly the failure that would make this whole job vacuous.
+        run: ci/linter/selftest.sh
+
       - name: Run linters
         env:
           LINT_ONLY: nginx sh python perl yaml

@@ -84,9 +84,16 @@ A new rule going red is a finding to triage, not drift to suppress.
 
 ```sh
 ver=1.7.7
-curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz" \
-  | tar -xz actionlint && sudo install -m0755 actionlint /usr/local/bin/
+sha=023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+curl -fsSL -o actionlint.tgz \
+  "https://github.com/rhysd/actionlint/releases/download/v${ver}/actionlint_${ver}_linux_amd64.tar.gz"
+echo "$sha  actionlint.tgz" | sha256sum -c -   # must pass before the next line
+tar -xzf actionlint.tgz actionlint && sudo install -m0755 actionlint /usr/local/bin/
 ```
+
+Do not pipe the tarball straight into `tar`: that installs whatever the network
+returned. The digest is from the release's `actionlint_${ver}_checksums.txt` and
+is pinned beside the version in `install-linters.sh` too — bump both together.
 
 Make sure `~/.local/bin` is on `PATH` for the pipx-installed tools.
 
