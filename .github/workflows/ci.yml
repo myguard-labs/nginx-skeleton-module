@@ -123,15 +123,16 @@ jobs:
             echo "::error::cannot diff $BASE_SHA...HEAD -- refusing to guess" >&2
             exit 1
           fi
-          if printf '%s\n' "$changed" | grep -qE \
-               '^(src/|ci/t/|ci/tools/ci-build\.sh|ci/tools/soak\.sh|\.github/workflows/(asan|ci)\.yml|\.github/versions\.env|\.github/scripts/)'; then
+          # One pattern, decision and log read the same variable, so they
+          # cannot drift the way two copies of the same regex eventually do.
+          gate='^(src/|ci/t/|ci/tools/ci-build\.sh|ci/tools/soak\.sh|\.github/workflows/(asan|ci)\.yml|\.github/versions\.env|\.github/scripts/)'
+          if printf '%s\n' "$changed" | grep -qE "$gate"; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "code=false" >> "$GITHUB_OUTPUT"
           fi
           echo "changed files matching the asan gate:"
-          printf '%s\n' "$changed" | grep -E \
-               '^(src/|ci/t/|ci/tools/ci-build\.sh|ci/tools/soak\.sh|\.github/workflows/(asan|ci)\.yml|\.github/versions\.env|\.github/scripts/)' || echo "  (none)"
+          printf '%s\n' "$changed" | grep -E "$gate" || echo "  (none)"
 
   asan:
     name: A/UBSan
