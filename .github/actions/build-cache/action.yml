@@ -96,17 +96,24 @@ runs:
         key: >-
           buildtree-${{ runner.os }}-${{ inputs.mode }}-${{ inputs.flavor }}-${{ inputs.nginx-version }}-${{ hashFiles('ci/tools/ci-build.sh', 'config', 'src/**') }}
 
-    # Package layer: check-before-install, not a real apt cache. actions/cache
-    # cannot safely cache /var/lib/dpkg (system-wide, shared across every job
-    # on the same persistent runner, and a stale restore can desync dpkg's own
-    # state) -- so there is no honest way to "cache" these three packages
-    # beyond not reinstalling ones already there. On builder02 (persistent
-    # self-hosted) that's every run after the first: `dpkg -s` is a few ms,
-    # `apt-get update` is a network round-trip. On a hosted or freshly-rotated
-    # ephemeral runner this still falls through to install, same as before --
-    # the honest fix for THAT case is a pre-baked runner image, not a cache
-    # layer bolted onto this script (out of scope here; see the CI notes for
-    # the ephemeral-conversion plan).
+    # Package layer: check-before-install, NOT an actions/cache layer, and
+    # deliberately still not one. actions/cache cannot safely cache
+    # /var/lib/dpkg -- it is system-wide, shared by every job on the same
+    # persistent runner, and a stale restore desyncs dpkg's own state, which
+    # is exactly the "cache serves a stale artifact into a green result"
+    # failure the caching rules forbid. So the only honest saving is not
+    # reinstalling what is already there, and this step already did that
+    # before eatmydata joined the list: `apt-get` runs only when `need` is
+    # non-empty, which on builder02 (persistent self-hosted) is the first run
+    # and no other. On a hosted or freshly-rotated ephemeral runner it falls
+    # through to install, same as before -- the fix for THAT case is a
+    # pre-baked runner image, not a cache bolted on here.
+    #
+    # The presence test stays `command -v` on purpose. `dpkg -s` exits 0 for a
+    # package in `rc` (deinstall ok config-files) state, whose binary is gone
+    # -- verified on this host: `dpkg -s libzfs6linux` exit 0, `command -v`
+    # absent. That would skip the install and fail the build downstream.
+    # `command -v` tests the thing we actually need, and is faster.
     - name: Ensure ccache, mold and eatmydata are present
       shell: bash
       run: |
@@ -116,7 +123,7 @@ runs:
         # portable to a fresh runner image.
         need=()
         for pkg in ccache mold eatmydata; do
-          dpkg -s "$pkg" >/dev/null 2>&1 || need+=("$pkg")
+          command -v "$pkg" >/dev/null || need+=("$pkg")
         done
         if [ ${#need[@]} -gt 0 ]; then
           sudo apt-get update

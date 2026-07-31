@@ -53,12 +53,14 @@
 #                       files configure churns through, never for compiled
 #                       output.
 #
-# apt/package installs are NOT cached here: builder02's runners are
-# persistent, so ccache/mold/eatmydata are dpkg-checked and skipped (not
-# reinstalled) by .github/actions/build-cache -- see its "Ensure ccache, mold
-# and eatmydata are present" step. There is no honest actions/cache layer for
-# a shared system dpkg database; if the runners go ephemeral, a pre-baked
-# image is the right fix, not a cache bolted on here.
+# apt/package installs are NOT cached here, and that is the conclusion, not an
+# omission. builder02's runners are persistent, so ccache/mold/eatmydata are
+# presence-checked and skipped (not reinstalled) by .github/actions/build-cache
+# -- see its "Ensure ccache, mold and eatmydata are present" step, which has
+# gated apt-get behind that check since before eatmydata joined the list. There
+# is no honest actions/cache layer for a shared system dpkg database; if the
+# runners go ephemeral, a pre-baked image is the right fix, not a cache bolted
+# on here.
 #
 # Everything is opt-out via NO_CACHE=1, so a job can force a from-scratch
 # build (release verification) without editing this script.
