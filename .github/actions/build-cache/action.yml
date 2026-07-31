@@ -96,16 +96,39 @@ runs:
         key: >-
           buildtree-${{ runner.os }}-${{ inputs.mode }}-${{ inputs.flavor }}-${{ inputs.nginx-version }}-${{ hashFiles('ci/tools/ci-build.sh', 'config', 'src/**') }}
 
-    - name: Ensure ccache and mold are present
+    # Package layer: check-before-install, NOT an actions/cache layer, and
+    # deliberately still not one. actions/cache cannot safely cache
+    # /var/lib/dpkg -- it is system-wide, shared by every job on the same
+    # persistent runner, and a stale restore desyncs dpkg's own state, which
+    # is exactly the "cache serves a stale artifact into a green result"
+    # failure the caching rules forbid. So the only honest saving is not
+    # reinstalling what is already there, and this step already did that
+    # before eatmydata joined the list: `apt-get` runs only when `need` is
+    # non-empty, which on builder02 (persistent self-hosted) is the first run
+    # and no other. On a hosted or freshly-rotated ephemeral runner it falls
+    # through to install, same as before -- the fix for THAT case is a
+    # pre-baked runner image, not a cache bolted on here.
+    #
+    # The presence test stays `command -v` on purpose. `dpkg -s` exits 0 for a
+    # package in `rc` (deinstall ok config-files) state, whose binary is gone
+    # -- verified on this host: `dpkg -s libzfs6linux` exit 0, `command -v`
+    # absent. That would skip the install and fail the build downstream.
+    # `command -v` tests the thing we actually need, and is faster.
+    - name: Ensure ccache, mold and eatmydata are present
       shell: bash
       run: |
         set -euo pipefail
-        # Present on the builder02 runners already; installed only on a hosted
-        # runner (codeql.yml). Cheap to check, and it keeps the template
-        # portable to a fresh runner image.
+        # Present on the builder02 runners already. The install path is for a
+        # hosted runner, which every consumer of this action reaches the same
+        # way: `runs-on` falls back to ubuntu-latest when
+        # github.event.pull_request.head.repo.fork is true. (codeql.yml is not
+        # one of them -- it does not use this action, because ccache serving a
+        # hit without running cc is incompatible with CodeQL's tracer.) Cheap
+        # to check, and it keeps the template portable to a fresh runner image.
         need=()
-        command -v ccache >/dev/null || need+=(ccache)
-        command -v mold   >/dev/null || need+=(mold)
+        for pkg in ccache mold eatmydata; do
+          command -v "$pkg" >/dev/null || need+=("$pkg")
+        done
         if [ ${#need[@]} -gt 0 ]; then
           sudo apt-get update
           sudo apt-get install -y "${need[@]}"
