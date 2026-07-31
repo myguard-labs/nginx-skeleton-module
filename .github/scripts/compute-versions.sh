@@ -28,10 +28,13 @@ trap 'rm -rf "$tmp"' EXIT
 
 api() {
   local url="$1"
+  # Same resilience budget as fetch-verify.sh: a transient blip or a stalled
+  # connection must retry, not fail the weekly bump job or hang the runner.
+  local -a opts=(-fsSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 300)
   if [ -n "${GITHUB_TOKEN:-}" ]; then
-    curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" "$url"
+    curl "${opts[@]}" -H "Authorization: Bearer $GITHUB_TOKEN" "$url"
   else
-    curl -fsSL "$url"
+    curl "${opts[@]}" "$url"
   fi
 }
 
@@ -55,7 +58,8 @@ sha_of_url() {
 }
 
 echo "resolving nginx versions from nginx.org..."
-dl_html="$(curl -fsSL https://nginx.org/en/download.html)"
+dl_html="$(curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 300 \
+  https://nginx.org/en/download.html)"
 # nginx numbers mainline with an odd minor and stable with an even one. Take
 # the highest of each rather than trusting page order.
 NGX_MAINLINE="$(printf '%s' "$dl_html" | grep -oE 'nginx-1\.[0-9]+\.[0-9]+' \

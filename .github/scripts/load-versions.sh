@@ -10,6 +10,10 @@ set -euo pipefail
 
 f=".github/versions.env"
 [ -f "$f" ] || { echo "::error::$f not found" >&2; exit 1; }
+# Outside a GitHub Actions step $GITHUB_ENV is unset, and set -u turns that
+# into a bare "unbound variable" -- give anyone running this by hand a
+# message that says what actually went wrong.
+[ -n "${GITHUB_ENV:-}" ] || { echo "::error::GITHUB_ENV unset -- run this inside a GitHub Actions step" >&2; exit 1; }
 
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
