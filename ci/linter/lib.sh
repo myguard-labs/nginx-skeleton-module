@@ -38,9 +38,9 @@ lint_files() {
     if [ "$#" -gt 0 ]; then
         list=$(printf '%s\n' "$@")
     elif [ "${LINT_MODE:-all}" = "staged" ]; then
-        list=$(git diff --cached --name-only --diff-filter=ACMR)
+        list=$(git diff --cached --name-only --diff-filter=ACMR) || die "git diff --cached failed"
     else
-        list=$(git ls-files)
+        list=$(git ls-files) || die "git ls-files failed"
     fi
     printf '%s\n' "$list" \
         | grep -Ev "$LINT_EXCLUDE_RE" \

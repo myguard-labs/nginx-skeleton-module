@@ -83,8 +83,8 @@ done < "$VERSIONS_FILE"
 . "$VERSIONS_FILE"
 
 case "$FLAVOR" in
-    nginx) DEFAULT_VERSION="$NGINX_VERSION" ;;
-    angie) DEFAULT_VERSION="$ANGIE_VERSION" ;;
+    nginx) DEFAULT_VERSION="${NGINX_VERSION:-}" ;;
+    angie) DEFAULT_VERSION="${ANGIE_VERSION:-}" ;;
     *)     DEFAULT_VERSION="" ;;
 esac
 VERSION="${2:-$DEFAULT_VERSION}"
