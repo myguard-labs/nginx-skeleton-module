@@ -39,7 +39,8 @@ typedef struct {
  * handler just returns the verdict the body handler recorded here.
  */
 typedef struct {
-    ngx_int_t    status;      /* verdict from the body pass; NGX_DECLINED = pass */
+    /* verdict from the body pass; NGX_DECLINED = pass */
+    ngx_int_t    status;
 } ngx_http_skel_ctx_t;
 
 
@@ -194,8 +195,9 @@ ngx_http_skel_handler(ngx_http_request_t *r)
      * reads and buffers the WHOLE body before the handler resumes -- in memory
      * up to client_body_buffer_size, then spooled to a temp file. The bound is
      * client_max_body_size, NOT skel_max_body: we inspect only the first
-     * skel_max_body bytes, but nginx still buffers everything first. So enabling
-     * the body scan (a) defeats request streaming (proxy_request_buffering off)
+     * skel_max_body bytes, but nginx still buffers everything first. So
+     * enabling the body scan (a) defeats request streaming
+     * (proxy_request_buffering off)
      * and (b) makes every upload up to client_max_body_size hit disk. Keep
      * client_max_body_size sane on body-scanned routes; do not read this as a
      * reason to raise skel_max_body -- that only widens the inspected prefix.
@@ -242,9 +244,10 @@ ngx_http_skel_body_handler(ngx_http_request_t *r)
                           : NGX_DECLINED;
     }
 
-    /* preserve_body: the content handler (proxy_pass, a POST target) still needs
-     * the bytes we just buffered; without this they are discarded and it sees an
-     * empty body. write_event_handler: the resume point once the engine parks. */
+    /* preserve_body: the content handler (proxy_pass, a POST target) still
+     * needs the bytes we just buffered; without this they are discarded and
+     * it sees an empty body. write_event_handler: the resume point once the
+     * engine parks. */
     r->preserve_body = 1;
     r->write_event_handler = ngx_http_core_run_phases;
 
@@ -442,7 +445,8 @@ ngx_http_skel_scan_body(ngx_http_request_t *r, size_t max)
         scanned += len;
     }
 
-    /* End of the (bounded) body: flush any escape held mid-token at the seam. */
+    /* End of the (bounded) body: flush any escape held mid-token at the
+     * seam. */
     return ngx_http_skel_stream_final(&st);
 }
 
@@ -496,7 +500,8 @@ ngx_http_skel_init(ngx_conf_t *cf)
     if (ngx_http_skel_scan_rules_valid() != NGX_OK) {
         ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
                       "skel: a scan rule is too long for the %d-byte "
-                      "cross-buffer seam carry; raise NGX_HTTP_SKEL_MAX_RULE_LEN "
+                      "cross-buffer seam carry; raise "
+                      "NGX_HTTP_SKEL_MAX_RULE_LEN "
                       "so that 3 * longest_rule < it",
                       (int) NGX_HTTP_SKEL_MAX_RULE_LEN);
         return NGX_ERROR;

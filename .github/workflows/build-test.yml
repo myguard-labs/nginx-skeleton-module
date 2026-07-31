@@ -11,17 +11,18 @@ name: Build&Test
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  NGINX_VERSION: "1.31.2"
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch: {}
+  # Triggered by ci.yml, which lanes the PR suite so peak runner use stays
+  # bounded. No push/pull_request trigger here on purpose: two entry points
+  # would run this twice per PR and defeat the laning.
+  workflow_call: {}
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Prefix must be unique per workflow. As a workflow_call member this inherits
+  # the caller's github.workflow/github.ref, so a group string matching ci.yml's
+  # would cancel the caller rather than a stale copy of this workflow.
+  group: build-test-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -92,6 +93,9 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
 
       - name: Install build dependencies
         run: |
@@ -229,6 +233,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
+
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -283,6 +290,9 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
 
       - name: Install build dependencies
         run: |
@@ -344,6 +354,9 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
 
       - name: Install dependencies
         run: |

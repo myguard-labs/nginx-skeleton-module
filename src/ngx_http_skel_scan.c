@@ -204,7 +204,8 @@ ngx_http_skel_normalize(u_char *dst, u_char *src, size_t len)
  * token and 'A' is literal. Whether a trailing '%' opens a token depends on the
  * decoder's state arriving there, so this walks ngx_unescape_uri()'s exact
  * three-state machine (type 0 path) over the whole window and reports only the
- * END state -- it decides where a token is still open, never what it decodes to.
+ * END state -- it decides where a token is still open, never what it decodes
+ * to.
  */
 static size_t
 ngx_http_skel_partial_escape(const u_char *data, size_t len)

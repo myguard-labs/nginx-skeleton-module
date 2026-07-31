@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit -- tracked, reviewable commit gate.
+#
+# Lives in the repo (unlike .git/hooks/, which is per-clone and invisible to
+# review), so a change to what the gate checks arrives as a diff.
+#
+# Enable once per clone:
+#     git config core.hooksPath .githooks
+# Emergency bypass:
+#     git commit --no-verify
+#
+# It lints only the STAGED files, so a commit is never blocked by a finding in
+# a file it does not touch. Run the whole tree yourself with:
+#     ci/linter/run-all.sh
+#
+# Exit 2 (a linter is not installed) blocks the commit on purpose: a gate that
+# skips itself when its tool is missing reports green while checking nothing.
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+"$ROOT/ci/linter/run-all.sh" --staged
+rc=$?
+if [ "$rc" -eq 2 ]; then
+    echo "pre-commit: missing linters -- run ci/linter/install-linters.sh" >&2
+elif [ "$rc" -ne 0 ]; then
+    echo "pre-commit: lint failed -- fix, or commit with --no-verify" >&2
+fi
+exit "$rc"
