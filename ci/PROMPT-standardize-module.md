@@ -56,7 +56,7 @@ gh run list -R myguard-labs/<module-name> --limit 20 \
 Record, in the memory mirror's `index.md`:
 
 - current layout (which of `t/`, `tests/`, `fuzz/`, `ci/` exist)
-- current workflow list and which of the reference's nine are missing
+- current workflow list and which of the reference's (Phase 2 table) are missing
 - **measured wall-clock per workflow** from `gh run list` — you need real
   numbers for the lane work in Phase 7. Estimates are not acceptable there.
 - current coverage number, if any tooling exists (usually none)
@@ -107,9 +107,9 @@ Rules:
 
 ## Phase 2 — workflows and badges
 
-Bring the target to the reference's **twelve** workflows. Do not copy blindly:
-each one carries reference-specific paths and pins that must be re-derived for
-the target.
+Bring the target to the reference's workflow set, listed below. Do not copy
+blindly: each one carries reference-specific paths and pins that must be
+re-derived for the target.
 
 | Workflow | What it must gate in the target |
 |---|---|

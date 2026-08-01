@@ -34,13 +34,23 @@
  * in this repo runs amd64, where size_t is 8 bytes and char is signed.
  *
  * Two non-amd64 legs used to exist and both were removed on 2026-08-01 (see
- * memory issues.md). qemu-s390x, for big-endian and unsigned char, never once
- * reached this code: builder02's runner slots cannot emulate s390x. -m32, for
- * 4-byte size_t, did work; it went with it, on the same call.
+ * memory issues.md). qemu-s390x never once reached this code: builder02's
+ * runner slots cannot emulate s390x. -m32 did work; it went on the same call.
  *
- * So a derived module that classifies high-bit bytes, parses a length prefix
- * off the wire, or ships to a 32-bit host needs its own leg. Locally,
- * `CC="gcc -m32" ci/tests/unit/run.sh` still does the 32-bit half.
+ * Three separate properties went with them, and they are worth keeping apart --
+ * s390x happened to carry two of them at once, which is not the same as their
+ * being one axis:
+ *
+ *   * pointer/size_t width. Reproduce natively: `CC="gcc -m32"`.
+ *   * plain `char` signedness, which is implementation-defined and independent
+ *     of byte order. Reproduce natively too: `CC="gcc -funsigned-char"` (or
+ *     -fsigned-char) needs no emulation at all, so a derived module that
+ *     classifies high-bit bytes has no excuse for leaving it untested.
+ *   * byte order. This one genuinely needs a big-endian target, and it is the
+ *     property nothing here can reproduce. It stays latent while the scan core
+ *     decodes no multi-byte integers off the wire, and becomes live the moment
+ *     a derived module parses a length prefix or a binary protocol -- that
+ *     module needs its own leg.
  *
  * Extend: add a CASE() function and one line in main(). Keep each case
  * asserting a value the CORRECT implementation produces and a BROKEN one does

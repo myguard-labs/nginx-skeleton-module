@@ -13,7 +13,7 @@ it does nothing but burn CI minutes — clone it, rename it, and replace the sca
 logic with your own before it's useful for anything.
 
 It's a working nginx dynamic HTTP module plus the CI harness that the modules
-in this org converged on — the build, the tests, the fuzzer and eight workflows
+in this org converged on — the build, the tests, the fuzzer and the workflows
 are already wired.
 
 The point of the skeleton is not the ~350 lines of C. It is that the *gates* are
@@ -72,7 +72,7 @@ ci/                        everything that only exists to test/build the module
     fixtures/policy/       trees the policy checks must go RED on
   PROMPT-standardize-module.md  prompt: bring an existing module to this standard
 .githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
-.github/workflows/         twelve workflows, see below
+.github/workflows/         the CI workflows, see below
 ```
 
 ### Four test layers, and why each exists
@@ -126,11 +126,11 @@ linter README explains what each covers.
 
 ## CI
 
-Twelve workflows. A failure surfaces as a red run plus the uploaded artifact —
+A failure surfaces as a red run plus the uploaded artifact —
 no chat notifications wired.
 
 Only `ci.yml` has a `pull_request` trigger. The PR-time workflows below are
-`workflow_call` members it lanes, so a PR asks for one run, not eleven; the
+`workflow_call` members it lanes, so a PR asks for one run, not nine; the
 lane map and its measured durations live in `ci.yml`'s header comment.
 
 | Workflow | Trigger | Gates |
