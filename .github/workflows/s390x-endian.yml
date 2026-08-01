@@ -107,15 +107,21 @@ jobs:
       # image rather than a missing handler.
       - name: Assert s390x emulation is usable
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          # Captured with the failure tolerated, not under `set -e`: when the
+          # handler is missing docker exits non-zero and `arch=$(...)` would
+          # abort the step before the message below could explain why, leaving
+          # a bare `exec format error` as the whole diagnosis -- the exact
+          # reading problem this step exists to remove.
           arch="$(timeout 120 docker run --rm --platform linux/s390x \
-                    "debian@${DEBIAN_DIGEST}" uname -m)"
-          [ "$arch" = "s390x" ] || {
-            echo "FAIL: emulated container reports '$arch', not s390x." >&2
+                    "debian@${DEBIAN_DIGEST}" uname -m 2>&1)" || true
+          if [ "$arch" != "s390x" ]; then
+            echo "FAIL: emulated container did not report s390x." >&2
+            echo "      Got: ${arch:-<no output>}" >&2
             echo "      Neither the pre-existing handler nor the action" >&2
             echo "      produced working s390x emulation on this runner." >&2
             exit 1
-          }
+          fi
           echo "OK: s390x emulation confirmed before the build"
 
       # The toolchain runs INSIDE the emulated container, so the objects are
