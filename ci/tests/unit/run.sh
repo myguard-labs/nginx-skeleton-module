@@ -10,8 +10,8 @@
 #                                   # can gcov src/ afterwards
 #
 # Env:
-#   CC                 compiler (default cc). The cross legs pass a full
-#                      driver line here, e.g. CC="gcc -m32".
+#   CC                 compiler (default cc). Takes a full driver line, so
+#                      CC="gcc -m32" runs the suite as a 32-bit binary.
 #   NGINX_BUILD_MODE   which .build tree to take headers + ngx_string.c from
 #                      (default debug; the coverage leg passes `coverage`).
 #
@@ -19,7 +19,7 @@
 #
 # Runs in well under a second and needs no nginx process, no network and no
 # root -- so it is the layer a derived module can afford to run on every save,
-# and the layer the -m32 leg can afford to run under a cross toolchain.
+# and the layer that stays usable under a cross toolchain.
 #
 # WHAT IT DOES *NOT* DO, deliberately: it does not shim nginx. The test binary
 # links the REAL src/core/ngx_string.c out of the build tree, which is why a
@@ -79,8 +79,8 @@ BIN="$DIR/test_scan"
 if [ "${1:-}" = "clean" ]; then
     # *.o too: this script produces them below and .gitignore already lists
     # them as generated. Leaving them behind meant `clean` did not give you a
-    # clean tree -- switching $CC (say to `gcc -m32` while reproducing the
-    # 32-bit leg) then relinked stale objects from the previous toolchain.
+    # clean tree -- switching $CC (say to `gcc -m32` for a 32-bit run) then
+    # relinked stale objects from the previous toolchain.
     rm -f "$BIN" "$DIR"/*.o "$DIR"/*.gcda "$DIR"/*.gcno
     echo "unit test binary removed"
     exit 0
@@ -101,8 +101,8 @@ NGX_INCS=(
     -I"$NGX_SRC/src/http/modules"
 )
 
-# Our code: the full warning wall. A 32-bit leg that only passes
-# with these loosened would be hiding the exact class of defect it exists for.
+# Our code: the full warning wall. A 32-bit or otherwise non-amd64 run that only
+# passes with these loosened is hiding the exact class of defect they exist for.
 OWN_CFLAGS=(-g -O1 -Wall -Wextra -Wshadow -Wstrict-prototypes -Werror)
 # Upstream code: warnings visible, not fatal (see the header).
 NGX_CFLAGS=(-g -O1 -Wall)

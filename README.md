@@ -51,7 +51,7 @@ ci/                        everything that only exists to test/build the module
   t/                       Test::Nginx: modes, scan, false-positive negatives
   tests/unit/              C unit tests of the scan core — no nginx, no network
     test_scan.c            boundary values: the cap, the seam, the hold window
-    run.sh                 build (-Werror) + run; also the -m32 entry point
+    run.sh                 build (-Werror) + run; CC="gcc -m32" for a 32-bit check
   fuzz/                    libFuzzer target + dict + seed corpus + regressions/
   vendor/nginx-tests/      upstream nginx/nginx-tests submodule (lib/Test/Nginx.pm)
   tools/
@@ -143,7 +143,6 @@ lane map and its measured durations live in `ci.yml`'s header comment.
 | `security-scanners.yml` | PR (via `ci.yml`) | flawfinder (≥4 blocks), clang-tidy (blocks), semgrep (advisory) |
 | `codeql.yml` | PR (via `ci.yml`) | CodeQL, **module TU only** |
 | `ci-deep.yml` | monthly + dispatch | 4h fuzz, 600s memcheck, 600s helgrind, **nginx mainline+stable+angie build & test matrix**, **coverage report** (a report, never a gate) |
-| `arch-32bit.yml` | weekly + dispatch | unit tests built **and run** under `-m32`: 4-byte `size_t`, where a length truncation the amd64 jobs cannot see becomes reachable |
 | `bump.yml` | weekly + dispatch | checks nginx.org/angie.software for newer pins, updates `ci/vendor/nginx-tests` submodule, commits+pushes to main if anything moved |
 
 PR-time jobs are the fast half; the slow half is deliberately out-of-band so the
