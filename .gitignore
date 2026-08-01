@@ -20,3 +20,9 @@ ci/tests/unit/test_scan
 ci/tests/unit/*.o
 ci/tests/unit/*.gcda
 ci/tests/unit/*.gcno
+
+# Python bytecode cache. ci/linter/workflow_policy.py is imported by its
+# wrappers, so running the lint gate creates this; it is derived output, it is
+# CPython-version-specific, and it carries an embedded source timestamp.
+__pycache__/
+*.pyc
