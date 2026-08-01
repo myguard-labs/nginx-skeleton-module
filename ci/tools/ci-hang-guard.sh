@@ -12,6 +12,7 @@
 #   backtrace-<pid>.txt  a gdb all-thread backtrace per hung process
 #   ps.txt               the process tree at the moment of the timeout
 #   watchdog.log         the watchdog's own diagnostics, replayed on stderr
+#   watchdog.fired       empty marker; its presence is what makes this exit 124
 # ...then kills the tree and exits 124, the same status timeout(1) uses.
 #
 # NO nginx-debug-<pid>.txt, and deliberately not: this header used to promise
@@ -70,6 +71,12 @@ shift
 
 mkdir -p "$ARTDIR"
 ARTDIR="$(cd "$ARTDIR" && pwd)"
+
+# A caller may reuse one artifact dir across several wrapped commands. A marker
+# left by an EARLIER command would then make the next one -- which exited fine
+# -- report 124 and replay someone else's backtrace. Clear it up front so the
+# marker only ever describes this run.
+rm -f "$ARTDIR/watchdog.fired"
 
 GDB="gdb"
 if ! gdb --version >/dev/null 2>&1; then
@@ -134,6 +141,16 @@ CMD_PID=$!
     sleep "$SOFT"
     kill -0 "$CMD_PID" 2>/dev/null || exit 0
     echo "ci-hang-guard: no exit after ${SOFT}s -- capturing evidence" >&2
+    # The marker is what the caller below tests, instead of inferring a
+    # watchdog fire from exit status 137. The wrapped process is not always the
+    # one that receives the KILL: a python or shell parent whose child was
+    # killed exits 1 or 143, so the hang was reported as an ordinary test
+    # failure and the backtrace this tool had just written was never mentioned.
+    # (The converse -- a command OOM-killed on its own, exiting 137 with no
+    # watchdog fire -- was already covered, since the old test also required
+    # ps.txt to exist.) Written before any capture, so it exists even if gdb
+    # dies or ptrace is refused.
+    : > "$ARTDIR/watchdog.fired"
     ps -ef > "$ARTDIR/ps.txt" 2>&1 || true
     for pid in $(descendants "$CMD_PID"); do
         capture_one "$pid"
@@ -172,10 +189,11 @@ wait "$WATCHDOG_PID" 2>/dev/null || true
 
 cat "$ARTDIR/cmd.log"
 
-# 137 is SIGKILL, which for this wrapper means the watchdog fired. Report it as
-# 124 (timeout(1)'s convention) so a reader does not mistake a watchdog kill for
-# an OOM kill, which is the other common source of 137 on this host.
-if [ "$RC" -eq 137 ] && [ -f "$ARTDIR/ps.txt" ]; then
+# Report a watchdog fire as 124 (timeout(1)'s convention) so a reader does not
+# mistake it for the OOM kill that is the other common source of 137 here. The
+# test is the marker file the watchdog wrote, not the exit status: see the
+# comment at the marker for the two ways reading 137 got this wrong.
+if [ -f "$ARTDIR/watchdog.fired" ]; then
     cat "$ARTDIR/watchdog.log" >&2 2>/dev/null || true
     echo "ci-hang-guard: watchdog fired; artifacts in $ARTDIR" >&2
     exit 124

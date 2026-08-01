@@ -308,6 +308,12 @@ jobs:
           # failures. That is a harness artifact, not a real red -- do not "fix" it
           # by editing tests. Export this locally too when reproducing.
           TEST_NGINX_TIMEOUT: "20"
+          # Without this, Test::Nginx falls back to its hardcoded 1984. Six CI
+          # slots share builder02, so two jobs on that default bind the same
+          # port: one dies with "Address already in use", or one suite talks to
+          # the other job's server and reports on the wrong binary. This job's
+          # band is unique and the suites within it run in sequence.
+          TEST_NGINX_PORT: ${{ env.TEST_BASE_PORT }}
           TEST_NGINX_SERVROOT: ${{ github.workspace }}/ci/t/servroot
         run: prove -v ci/t/
 

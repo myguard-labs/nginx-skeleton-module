@@ -77,7 +77,11 @@ ROOT="$(cd "$DIR/../../.." && pwd)"
 BIN="$DIR/test_scan"
 
 if [ "${1:-}" = "clean" ]; then
-    rm -f "$BIN" "$DIR"/*.gcda "$DIR"/*.gcno
+    # *.o too: this script produces them below and .gitignore already lists
+    # them as generated. Leaving them behind meant `clean` did not give you a
+    # clean tree -- switching $CC (say to `gcc -m32` while reproducing the
+    # 32-bit leg) then relinked stale objects from the previous toolchain.
+    rm -f "$BIN" "$DIR"/*.o "$DIR"/*.gcda "$DIR"/*.gcno
     echo "unit test binary removed"
     exit 0
 fi

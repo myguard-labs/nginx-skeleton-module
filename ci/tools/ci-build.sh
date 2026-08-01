@@ -80,21 +80,13 @@ if [ ! -f "$VERSIONS_FILE" ]; then
     echo "FATAL: $VERSIONS_FILE not found (run from the module root)" >&2
     exit 1
 fi
-# Validate before sourcing. load-versions.sh applies the same KEY=value check
-# on the CI side, but this script `source`s the file directly -- so without a
-# check here, a stray line that is not a pin would be executed as shell rather
-# than rejected. Same rule enforced in both consumers.
-while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-        ''|\#*) continue ;;
-    esac
-    if ! printf '%s' "$line" | grep -qE '^[A-Za-z_][A-Za-z0-9_]*=[A-Za-z0-9._-]*$'; then
-        echo "FATAL: malformed line in $VERSIONS_FILE: $line" >&2
-        exit 1
-    fi
-done < "$VERSIONS_FILE"
-# shellcheck source=/dev/null
-. "$VERSIONS_FILE"
+# Validate before sourcing: a line in this file that is not a pin would be
+# executed as shell. The check is shared with every other consumer rather than
+# repeated here -- see ci/tools/versions-env.sh for why the inline copy this
+# replaced did not survive contact with a third caller.
+# shellcheck source=ci/tools/versions-env.sh
+. "$(dirname "${BASH_SOURCE[0]}")/versions-env.sh"
+load_versions_env "$VERSIONS_FILE" || exit 1
 
 case "$FLAVOR" in
     nginx) DEFAULT_VERSION="${NGINX_VERSION:-}" ;;

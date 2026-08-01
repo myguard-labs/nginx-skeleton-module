@@ -39,14 +39,32 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 MODE="${1:-${NGINX_BUILD_MODE:-debug}}"
 
 if [ -z "${NGINX_VERSION:-}" ]; then
+    FOUND=""
     for d in "$REPO_ROOT"/.build/nginx-*-"$MODE"/; do
         [ -d "$d" ] || continue
         v=${d%/}; v=${v##*/nginx-}; v=${v%-"$MODE"}
         # The tarball sits beside the trees; a glob that matched it would
         # yield a version ending in ".tar".
         case "$v" in *.tar*) continue ;; esac
-        NGINX_VERSION=$v   # last match wins; a single tree in practice
+        FOUND="$FOUND $v"
+        NGINX_VERSION=$v
     done
+    # More than one tree is AMBIGUOUS, and the old "last match wins" resolved
+    # it by glob order, which is lexicographic and not version order:
+    # nginx-1.31.3-debug sorts after nginx-1.31.10-debug, so the OLDER tree
+    # won. A caller that just built 1.31.10 and did not pass NGINX_VERSION
+    # would then be handed 1.31.3's headers, and the mismatch surfaces later as
+    # a confusing compile or link error rather than as the stale tree it is.
+    # Refusing to guess is the only safe resolution: the caller knows which
+    # version it meant, this script does not.
+    set -- $FOUND
+    if [ "$#" -gt 1 ]; then
+        echo "ERROR: several .build/nginx-*-$MODE trees exist:$FOUND" >&2
+        echo "       Pass NGINX_VERSION=<version> to say which one to use," >&2
+        echo "       or remove the stale trees. Refusing to guess -- glob" >&2
+        echo "       order is lexicographic, so the oldest can win." >&2
+        exit 1
+    fi
 fi
 
 if [ -z "${NGINX_VERSION:-}" ]; then

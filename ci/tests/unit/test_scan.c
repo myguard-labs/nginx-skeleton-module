@@ -44,6 +44,7 @@
 #include "ngx_http_skel_scan.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 
@@ -97,6 +98,21 @@ scan_split(const u_char *s, size_t len, size_t at)
     u_char                  b[NGX_HTTP_SKEL_SCAN_MAX];
 
     memset(&st, 0, sizeof(st));
+
+    /*
+     * Both halves must fit. Every current caller passes a short hand-picked
+     * literal, so this cannot fire today -- but this file's header invites new
+     * cases, and a longer string added to probe a boundary would smash two
+     * stack buffers inside the harness. A test harness that corrupts its own
+     * stack does not report a failure, it reports nonsense, and the bug looks
+     * like it is in the code under test.
+     */
+    if (at > sizeof(a) || len < at || len - at > sizeof(b)) {
+        fprintf(stderr, "scan_split: input of %zu split at %zu does not fit "
+                        "the %zu-byte halves\n", len, at, sizeof(a));
+        abort();
+    }
+
     memcpy(a, s, at);
     memcpy(b, s + at, len - at);
 

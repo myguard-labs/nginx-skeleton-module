@@ -97,7 +97,18 @@ if ! command -v ss >/dev/null 2>&1; then
     exit 2
 fi
 
-busy="$(ss -Hltn 2>/dev/null \
+# ss runs on its own first. Under `set -euo pipefail` a non-zero ss inside the
+# pipeline below would fail the command substitution and kill the script with no
+# message at all -- the unexplained exit this file exists to replace with a
+# named cause.
+if ! listeners="$(ss -Hltn 2>&1)"; then
+    echo "ERROR: ss(8) failed, so the band could not be checked:" >&2
+    printf '       %s\n' "$listeners" >&2
+    echo "       Not treating an unverifiable band as free." >&2
+    exit 2
+fi
+
+busy="$(printf '%s\n' "$listeners" \
     | awk -v lo="$BASE" -v hi="$MAX" '
         {
             # Local address is field 4, "addr:port" -- take the last colon so

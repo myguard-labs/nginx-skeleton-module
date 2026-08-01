@@ -418,9 +418,17 @@ def main() -> int:
             return 2
 
     srv = Server(args.nginx, args.module, args.port)
-    srv.start()
     failures = 0
+    # start() INSIDE the try. Both of its failure paths raise SystemExit, and
+    # with the call outside this block neither one reached stop(): the nginx it
+    # had already spawned kept running and its temp prefix was never removed.
+    # On a persistent self-hosted runner that leaked process goes on holding
+    # this job's port, so the NEXT run binds on top of a server from the last
+    # one and tests the old module -- the failure ci/tools/max-port.sh exists
+    # to catch, manufactured by the suite itself. stop() is null-safe and
+    # idempotent, so covering the constructor costs nothing.
     try:
+        srv.start()
         for case in cases:
             started = time.monotonic()
             try:

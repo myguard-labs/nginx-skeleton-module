@@ -44,8 +44,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
-# shellcheck source=/dev/null
-. .github/versions.env
+# Validated, not just sourced: this file is `source`d, so a line that is not a
+# pin runs as shell. This script used to source it bare while ci-build.sh
+# validated -- the rule now lives in one place and every consumer calls it.
+# shellcheck source=ci/tools/versions-env.sh
+. "$ROOT/ci/tools/versions-env.sh"
+load_versions_env "$ROOT/.github/versions.env" || exit 1
 VERSION="${1:-$NGINX_VERSION}"
 OUT="${COVERAGE_OUT:-$ROOT/.build/coverage}"
 
@@ -74,12 +78,27 @@ fi
 find "$OBJDIR" -name '*.gcda' -delete
 
 echo "==> Unit tests (instrumented)"
-COVERAGE=1 NGINX_BUILD_MODE=coverage bash ci/tests/unit/run.sh
+# NGINX_VERSION passed explicitly. Without it ci/tests/unit/run.sh falls back to
+# ci/tools/nginx-tree.sh's glob, which would have to pick between build trees on
+# its own -- and this script knows exactly which tree it just built. Relying on
+# the glob here meant the instrumented unit run could be pointed at a leftover
+# tree of a different version than the one the report is generated from.
+COVERAGE=1 NGINX_VERSION="$VERSION" NGINX_BUILD_MODE=coverage \
+    bash ci/tests/unit/run.sh
 
 echo "==> Test::Nginx suite against the instrumented server"
+# TEST_NGINX_PORT pinned to this job's band. Test::Nginx::Socket falls back to
+# TEST_NGINX_SERVER_PORT, then TEST_NGINX_PORT, then a hardcoded 1984
+# (Test/Nginx/Util.pm: `our $ServerPort = $ENV{TEST_NGINX_SERVER_PORT} ||
+# $ENV{TEST_NGINX_PORT} || 1984`). builder02 runs six CI slots at once, so two
+# jobs reaching that default bind the same port on one host: one fails with
+# "Address already in use", or worse, one suite quietly talks to the other
+# job's server. The band is per-job and the two suites here run in sequence, so
+# they can share it.
 TEST_NGINX_BINARY="$BUILD/objs/nginx" \
 TEST_NGINX_LOAD_MODULES="$BUILD/objs/ngx_http_skel_module.so" \
 TEST_NGINX_TIMEOUT="${TEST_NGINX_TIMEOUT:-20}" \
+TEST_NGINX_PORT="${TEST_BASE_PORT:-18880}" \
 TEST_NGINX_SERVROOT="$ROOT/ci/t/servroot" \
     prove ci/t/
 
@@ -102,8 +121,13 @@ fi
 # Both object dirs: the nginx-linked module objects and the unit-test objects,
 # which cover the same src/ TUs from a different driver. Merging them is the
 # point -- a line reached only by the unit harness is still reached.
+# --object-directory, not --gcov-object-directory: the latter was only added in
+# gcovr 7.0 as an alias for this one, and an unknown option is a hard argparse
+# failure, not a warning. The fork arm of this job runs on ubuntu-latest, whose
+# gcovr is older than the self-hosted runner's -- so the newer spelling would
+# fail exactly on the runner nobody watches. Both spellings work on 7.x.
 gcovr "${GCOVR_ARGS[@]}" \
-    --gcov-object-directory "$OBJDIR" \
+    --object-directory "$OBJDIR" \
     "$OBJDIR" "$ROOT/ci/tests/unit"
 
 echo

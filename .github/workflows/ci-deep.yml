@@ -325,6 +325,12 @@ jobs:
     name: Coverage report
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
     timeout-minutes: 60
+    env:
+      # This job's port band, disjoint from build-test.yml's 19200. It runs
+      # ci/tools/coverage.sh, which drives both the Test::Nginx suite and the
+      # runtime driver; without a band both fall back to a shared default and
+      # collide with whatever else is running on builder02's six slots.
+      TEST_BASE_PORT: '19400'
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5

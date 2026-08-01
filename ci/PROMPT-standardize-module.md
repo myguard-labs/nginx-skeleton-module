@@ -123,6 +123,8 @@ the target.
 | `codeql.yml` | CodeQL over the **module TU only** |
 | `ci-deep.yml` | monthly: long fuzz, memcheck, helgrind, nginx mainline+stable+angie matrix |
 | `bump.yml` | weekly pin bump + `ci/vendor/nginx-tests` submodule update |
+| `arch-32bit.yml` | weekly: build + unit tests on 32-bit, where `size_t` is 32 bits and a length calculation that cannot overflow on amd64 can |
+| `s390x-endian.yml` | weekly: build + unit tests under qemu-s390x, where `char` is UNSIGNED and byte order is big-endian |
 
 Also port, adapting paths:
 
