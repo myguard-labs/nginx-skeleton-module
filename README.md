@@ -49,20 +49,42 @@ src/
   ngx_http_skel_scan.{c,h} the DECISION LOGIC — no nginx request state
 ci/                        everything that only exists to test/build the module
   t/                       Test::Nginx: modes, scan, false-positive negatives
+  tests/unit/              C unit tests of the scan core — no nginx, no network
+    test_scan.c            boundary values: the cap, the seam, the hold window
+    run.sh                 build (-Werror) + run; also the -m32/s390x entry point
   fuzz/                    libFuzzer target + dict + seed corpus + regressions/
   vendor/nginx-tests/      upstream nginx/nginx-tests submodule (lib/Test/Nginx.pm)
   tools/
-    ci-build.sh            build nginx|angie × debug|asan|module
+    ci-build.sh            build nginx|angie × debug|asan|module|coverage
+    nginx-tree.sh          locate a built tree (one parser, three consumers)
+    test_runtime.py        live-server cases Test::Nginx cannot express
+    coverage.sh            gcov/gcovr report over src/ only
+    max-port.sh            prove a job's test port band is free and non-ephemeral
+    ci-hang-guard.sh       capture backtraces before a job timeout kills the box
     soak.sh                sustained matching/benign storm under valgrind/ASan
     valgrind.supp          nginx-core-only suppressions
     rename-module.sh       skel -> your name (delete after use)
   linter/                  local lint gate, mirrors the CI thresholds
-  PROMPT-standardize-module.md  prompt: bring an existing module to this standard
     run-all.sh             every checker; what the pre-commit hook runs
     install-linters.sh     apt-get -> pipx -> cpan -> upstream binary
+    workflow_policy.py     repo-policy checks over .github/workflows/
+  PROMPT-standardize-module.md  prompt: bring an existing module to this standard
 .githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
-.github/workflows/         nine workflows, see below
+.github/workflows/         twelve workflows, see below
 ```
+
+### Four test layers, and why each exists
+
+| Layer | Runs | Answers |
+|---|---|---|
+| `ci/tests/unit/` | no nginx, <1s | *what VALUE* does the scan core return at a named boundary — the cap, a piece seam, an open escape |
+| `ci/t/` (Test::Nginx) | live nginx, one request at a time | does the module wire into the request correctly — modes, statuses, inheritance |
+| `ci/tools/test_runtime.py` | live nginx, driven from outside | concurrency, the chunk seam through the real body handler, reload under load |
+| `ci/fuzz/` | libFuzzer | does it CRASH, and does split input agree with whole input, on bytes nobody wrote by hand |
+
+A fuzzer asserts invariants, not values; Test::Nginx cannot address a buffer
+boundary; the unit tests cannot see nginx's chain buffers. Each layer covers what
+the one above it structurally cannot.
 
 `ci/t/` uses the same `Test::Nginx::Socket` framework as upstream nginx's own
 [nginx-tests](https://github.com/nginx/nginx-tests) suite (vendored read-only
@@ -102,19 +124,25 @@ linter README explains what each covers.
 
 ## CI
 
-Nine workflows. A failure surfaces as a red run plus the uploaded artifact — no
-chat notifications wired.
+Twelve workflows. A failure surfaces as a red run plus the uploaded artifact —
+no chat notifications wired.
+
+Only `ci.yml` has a `pull_request` trigger. The PR-time workflows below are
+`workflow_call` members it lanes, so a PR asks for one run, not eleven; the
+lane map and its measured durations live in `ci.yml`'s header comment.
 
 | Workflow | Trigger | Gates |
 |---|---|---|
 | `lint.yml` | PR (via `ci.yml`) | the `ci/linter/` gate: nginx conventions, shellcheck, ruff, perlcritic + `perl -c`, yamllint, actionlint, **zizmor** (workflow security) — hosted runner, no self-hosted slot |
-| `build-test.yml` | PR + push | shellcheck/cppcheck/actionlint, build, **.so dlopens**, **bad config is rejected**, **`-T` survives merged multi-context config**, `-Werror` strict compile, Test::Nginx, ASan+UBSan, **rename smoke** |
-| `asan.yml` | PR + push (path-gated: `src/` + build/soak harness) | 60s ASan/UBSan request-storm soak (static `--add-module`) |
-| `fuzzing.yml` | PR + push | replay every past crash, then 120s fresh fuzz |
-| `valgrind.yml` | PR + push | 60s memcheck soak |
-| `security-scanners.yml` | PR + push | flawfinder (≥4 blocks), clang-tidy (blocks), semgrep (advisory) |
-| `codeql.yml` | PR + push + monthly | CodeQL, **module TU only** |
-| `ci-deep.yml` | monthly + dispatch | 4h fuzz, 600s memcheck, 600s helgrind, **nginx mainline+stable+angie build & test matrix** |
+| `build-test.yml` | PR (via `ci.yml`) | shellcheck/cppcheck/actionlint, build, **.so dlopens**, **bad config is rejected**, **`-T` survives merged multi-context config**, `-Werror` strict compile, Test::Nginx, ASan+UBSan, **rename smoke**, **unit tests**, **runtime suite** (concurrency, chunk seam, reload under load) |
+| `asan.yml` | PR (via `ci.yml`, path-gated: `src/` + build/soak harness) | 60s ASan/UBSan request-storm soak (static `--add-module`) |
+| `fuzzing.yml` | PR (via `ci.yml`) | replay every past crash, then 120s fresh fuzz |
+| `valgrind.yml` | PR (via `ci.yml`) | 60s memcheck soak |
+| `security-scanners.yml` | PR (via `ci.yml`) | flawfinder (≥4 blocks), clang-tidy (blocks), semgrep (advisory) |
+| `codeql.yml` | PR (via `ci.yml`) | CodeQL, **module TU only** |
+| `ci-deep.yml` | monthly + dispatch | 4h fuzz, 600s memcheck, 600s helgrind, **nginx mainline+stable+angie build & test matrix**, **coverage report** (a report, never a gate) |
+| `arch-32bit.yml` | weekly + dispatch | unit tests built **and run** under `-m32`: 4-byte `size_t`, where a length truncation the amd64 jobs cannot see becomes reachable |
+| `s390x-endian.yml` | weekly + dispatch | unit tests under qemu-s390x: **big-endian and unsigned `char`**, with a planted-bug negative control proving the leg can see a signedness defect |
 | `bump.yml` | weekly + dispatch | checks nginx.org/angie.software for newer pins, updates `ci/vendor/nginx-tests` submodule, commits+pushes to main if anything moved |
 
 PR-time jobs are the fast half; the slow half is deliberately out-of-band so the
@@ -123,7 +151,7 @@ merge path stays quick. That split is the whole design.
 ### Caching
 
 Every build goes through `ci/tools/ci-build.sh`, which is the single chokepoint
-where caching lives — so all eight workflows inherit it and none of them duplicate
+where caching lives — so every workflow inherits it and none of them duplicate
 cache logic. `.github/actions/build-cache` is the composite action that restores
 the caches for one mode.
 

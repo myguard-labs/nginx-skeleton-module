@@ -1,0 +1,140 @@
+name: s390x-endian
+
+# Build and RUN the scan-core unit tests on a big-endian, unsigned-char target
+# under qemu-user emulation.
+#
+# WHAT THIS ACTUALLY CATCHES, stated precisely because the workflow name
+# undersells one half and oversells the other:
+#
+#   * `char` IS UNSIGNED BY DEFAULT on s390x. On amd64 and arm64 it is signed.
+#     The scan core walks attacker-shaped bytes -- percent-escape state, the
+#     hold window, the decoded seam -- and any comparison or arithmetic that
+#     relies on sign-extension of a high-bit byte changes behaviour the moment
+#     char flips unsigned, with NO warning on either platform. This is the
+#     mechanism the leg really verifies, and it is a live risk for any derived
+#     module that adds byte classification to the scan core.
+#   * BIG-ENDIAN byte order is the other half, and for the SHIPPED code it is
+#     latent rather than live: the scan core decodes no multi-byte integers off
+#     the wire (no ntohl/htonl, no uint32_t assembled from a buffer). It becomes
+#     live the moment a derived module parses a length prefix or a binary
+#     protocol, which is exactly the kind of module this template exists to
+#     start. Keeping the leg means that module inherits the coverage instead of
+#     discovering the need for it.
+#
+# Off the PR path: qemu-emulated gcc is minutes, not the seconds the blocking
+# gates cost. Scheduled a day away from arch-32bit.yml (Wednesday 05:51) and
+# codeql.yml so the scheduled workflows do not queue together.
+#
+# Action pins are repeated in every workflow in this repo -- keep them in sync:
+# actions/checkout@v5             -> 93cb6efe18208431cddfb8368fd83d5badbf9bfd
+# docker/setup-qemu-action@v3.6.0 -> 29109295f81e9208d7d86ff1c6c12d2833863392
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  schedule:
+    - cron: '43 5 * * 2'
+  workflow_dispatch: {}
+
+concurrency:
+  group: s390x-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit-s390x:
+    name: Unit tests under qemu-s390x
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","docker"]') }}
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
+
+      - name: Register qemu-user binfmt handlers
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+        with:
+          platforms: s390x
+
+      # The toolchain runs INSIDE the emulated container, so the objects are
+      # real s390x ELF built by a native-to-that-target gcc -- no cross
+      # toolchain on the amd64 host, and no chance of the host's headers
+      # leaking in. The tarball is still fetched and sha256-verified by
+      # ci-build.sh, inside the container, from the same pinned digest.
+      - name: Configure, build and run the unit tests under qemu-s390x
+        env:
+          NGINX_VERSION: ${{ env.NGINX_VERSION }}
+        run: |
+          set -euo pipefail
+          docker run --rm --platform linux/s390x \
+              -v "$PWD:/src" -w /src \
+              -e NGINX_VERSION="$NGINX_VERSION" \
+              -e NO_CACHE=1 \
+              debian:bookworm-slim \
+              bash -euo pipefail -c '
+                  apt-get update -qq
+                  apt-get install -y --no-install-recommends \
+                      gcc libc6-dev libpcre2-dev zlib1g-dev curl ca-certificates \
+                      git >/dev/null
+                  # git: ci/tests/unit/run.sh resolves the repo root through the
+                  # checkout, and the bind-mounted tree is a git repo owned by a
+                  # different uid inside the container.
+                  git config --global --add safe.directory /src
+                  bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" module
+                  NGINX_BUILD_MODE=module bash ci/tests/unit/run.sh
+              '
+
+      # NEGATIVE CONTROL -- prove the leg can SEE a signedness-shaped defect,
+      # not merely that it can run a binary. On s390x `char` is unsigned, so
+      # `c < 0` against a plain char is dead code there and live on amd64.
+      # Planting exactly that comparison must make this same emulated build
+      # fail, because ci/tests/unit/run.sh compiles our TUs with -Werror and
+      # gcc reports the always-false comparison.
+      #
+      # Without this step a broken emulation setup (binfmt not registered, the
+      # container silently running amd64) would produce a green tick forever.
+      - name: Negative control -- a char-signedness bug is observable here
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/endian-nc"
+          cp -a . "$RUNNER_TEMP/endian-nc"
+          cd "$RUNNER_TEMP/endian-nc"
+          printf '\nstatic int skel_planted_signedness_check(char c) { return c < 0; }\n' \
+              >> src/ngx_http_skel_scan.c
+          set +e
+          docker run --rm --platform linux/s390x \
+              -v "$PWD:/src" -w /src \
+              -e NGINX_BUILD_MODE=module \
+              debian:bookworm-slim \
+              bash -euo pipefail -c '
+                  apt-get update -qq
+                  apt-get install -y --no-install-recommends \
+                      gcc libc6-dev git >/dev/null
+                  git config --global --add safe.directory /src
+                  bash ci/tests/unit/run.sh
+              ' > "$RUNNER_TEMP/endian-nc.log" 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "FAIL: a planted char-signedness bug built clean under" \
+                 "qemu-s390x -- this leg would not have caught it." >&2
+            tail -50 "$RUNNER_TEMP/endian-nc.log" >&2
+            exit 1
+          fi
+          grep -qiE 'always (true|false)|tautological|type-limits|unused' \
+              "$RUNNER_TEMP/endian-nc.log" || {
+            echo "FAIL: the control build failed for an UNEXPECTED reason." >&2
+            echo "      Expected a tautological/always-false comparison error;" >&2
+            echo "      a different failure means the control proves nothing." >&2
+            tail -50 "$RUNNER_TEMP/endian-nc.log" >&2
+            exit 1
+          }
+          echo "OK: the emulated leg can observe a char-signedness defect"
+          rm -rf "$RUNNER_TEMP/endian-nc" "$RUNNER_TEMP/endian-nc.log"

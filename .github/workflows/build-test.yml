@@ -46,12 +46,15 @@ jobs:
 
       - name: Validate scripts and source
         run: |
-          bash -n ci/tools/ci-build.sh
-          bash -n ci/tools/soak.sh
-          bash -n ci/tools/bump-versions.sh
-          bash -n ci/tools/rename-module.sh
-          shellcheck ci/tools/ci-build.sh ci/tools/soak.sh \
-            ci/tools/bump-versions.sh ci/tools/rename-module.sh ci/fuzz/build.sh
+          for s in ci/tools/*.sh ci/fuzz/build.sh ci/tests/unit/run.sh \
+                   ci/linter/*.sh .githooks/pre-commit; do
+            bash -n "$s"
+          done
+          # -x + --source-path so `. lib.sh` resolves; a bare shellcheck run
+          # reports SC1091 on every linter and misses what lib.sh defines.
+          shellcheck -x --source-path=ci/linter \
+            ci/tools/*.sh ci/fuzz/build.sh ci/tests/unit/run.sh \
+            ci/linter/*.sh .githooks/pre-commit
           cppcheck \
             --enable=warning,performance,portability \
             --error-exitcode=1 \
@@ -60,7 +63,7 @@ jobs:
             --suppress=unusedFunction \
             --suppress=unusedStructMember \
             -I src \
-            src/
+            src/ ci/tests/unit/
           # Catches whitespace errors and conflict markers that survived a merge.
           git diff --check
 
@@ -223,10 +226,30 @@ jobs:
             done
           )
 
+      # The scan core's boundary cases, with no nginx process and no network.
+      # Placed in THIS job because the tree it needs is already built here --
+      # a separate job would rebuild it for ~2s of tests and take a sixth
+      # self-hosted slot the ci.yml lane map does not have spare.
+      #
+      # `module` mode is what this job's tree is NOT (it builds debug), so the
+      # mode is passed explicitly rather than left to the locator's default.
+      - name: Unit tests (scan core)
+        env:
+          NGINX_BUILD_MODE: debug
+        run: bash ci/tests/unit/run.sh
+
   test-nginx:
     name: Test::Nginx
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
     timeout-minutes: 20
+    env:
+      # This job's OWN 64-wide port band. builder02 runs six ephemeral slots and
+      # this workflow does not serialise against asan.yml, so two runtime suites
+      # can start at the same instant; a shared default port makes the later
+      # one's listener collide with the earlier one's server, and CI reports two
+      # unrelated-looking failures. ci/linter/lint-ci-ports.sh fails the build
+      # if a job starts the runtime driver without declaring a distinct band.
+      TEST_BASE_PORT: '19200'
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -273,6 +296,32 @@ jobs:
           TEST_NGINX_TIMEOUT: "20"
           TEST_NGINX_SERVROOT: ${{ github.workspace }}/ci/t/servroot
         run: prove -v ci/t/
+
+      # Fails BEFORE the fixture starts if the band reaches the kernel ephemeral
+      # range or is already occupied by a leftover server -- either of which
+      # would otherwise surface as a timeout with no cause attached.
+      - name: Verify this job's port band is free
+        run: bash ci/tools/max-port.sh "$TEST_BASE_PORT"
+
+      # The cases Test::Nginx cannot express: concurrency, the chunk seam driven
+      # through the real body handler, and reload under load. Wrapped in the
+      # hang guard so an event-loop wedge leaves a backtrace instead of a bare
+      # "cancelled" -- these are exactly the cases that hang rather than fail.
+      - name: Runtime suite
+        run: |
+          bash ci/tools/ci-hang-guard.sh 300 "$RUNNER_TEMP/hang" -- \
+            python3 ci/tools/test_runtime.py \
+              --nginx ".build/nginx-${NGINX_VERSION}-debug/objs/nginx" \
+              --module ".build/nginx-${NGINX_VERSION}-debug/objs/ngx_http_skel_module.so" \
+              --port "$TEST_BASE_PORT"
+
+      - name: Upload hang evidence
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: runtime-hang-evidence
+          path: ${{ runner.temp }}/hang
+          if-no-files-found: ignore
 
   # Guards the two rename-script traps that shipped silently in the past:
   # (1) a fresh `rm -rf .git && git init` makes `git ls-files` succeed with

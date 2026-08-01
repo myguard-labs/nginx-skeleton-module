@@ -7,6 +7,7 @@
 #     version: source version, e.g. 1.31.2
 #     mode   : debug (default, dynamic .so) | asan (static, sanitizers)
 #              | module (dynamic .so only, nginx core NOT compiled)
+#              | coverage (dynamic .so, gcov-instrumented, -O0)
 #
 # The built tree lives under ./.build, ONE TREE PER MODE:
 #   .build/<dir>-<mode>/objs/nginx                     (server binary)
@@ -103,9 +104,9 @@ esac
 VERSION="${2:-$DEFAULT_VERSION}"
 
 case "$MODE" in
-    debug|asan|module) ;;
+    debug|asan|module|coverage) ;;
     *)
-        echo "unsupported mode: $MODE (want: debug|asan|module)" >&2
+        echo "unsupported mode: $MODE (want: debug|asan|module|coverage)" >&2
         exit 2
         ;;
 esac
@@ -218,6 +219,22 @@ CC_OPT="-g -Wall -Wextra"
 LD_OPT=""
 ADD_MODULE="--add-dynamic-module=$MODULE_DIR"
 
+# --- coverage ------------------------------------------------------------
+# gcov instrumentation, and -O0 so the arc counts map to source lines a human
+# can act on rather than to whatever the optimizer inlined them into. The .so
+# stays DYNAMIC: --coverage links the gcov runtime into the module object
+# itself, so a plain (uninstrumented) nginx loading it still emits .gcda on a
+# graceful exit. That is what lets ci/tools/coverage.sh reuse the ordinary
+# ci/t/ run instead of needing a special server binary the way asan does.
+#
+# It gets its OWN tree for the same reason asan does -- see the CACHING block.
+# A cached debug objs/ restored here would produce a coverage report with no
+# arcs at all, and an empty report reads as "0% covered", not as "broken".
+if [ "$MODE" = "coverage" ]; then
+    CC_OPT="--coverage -O0 -g -Wall -Wextra"
+    LD_OPT="--coverage"
+fi
+
 if [ "$MODE" = "asan" ]; then
     SAN="-fsanitize=address,undefined -fno-sanitize-recover=undefined"
     SAN="$SAN -fno-omit-frame-pointer -g -O1"
@@ -319,6 +336,13 @@ case "$MODE" in
     asan)
         make -j"$(nproc)"
         echo "built: $SRCDIR/objs/nginx"
+        ;;
+    coverage)
+        # Both, like debug: coverage.sh runs the real ci/t/ suite against this
+        # server binary, and the .so is where the instrumented arcs live.
+        make -j"$(nproc)" modules
+        make -j"$(nproc)"
+        echo "built: $SRCDIR/objs/nginx (gcov-instrumented module)"
         ;;
     module)
         # Only the .so -- deliberately no full `make`, so the nginx core never

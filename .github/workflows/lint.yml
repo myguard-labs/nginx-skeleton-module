@@ -62,5 +62,5 @@ jobs:
 
       - name: Run linters
         env:
-          LINT_ONLY: nginx sh python perl yaml
+          LINT_ONLY: nginx sh python perl yaml ci-runners ci-ports docs-drift
         run: ci/linter/run-all.sh
