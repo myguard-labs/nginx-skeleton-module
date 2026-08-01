@@ -8,6 +8,20 @@ The reference implementation is `/opt/myguard/labs/nginx-skeleton-module`
 (this repo). **Read the reference before changing the target** — the point is
 not to make the target look similar, it is to give it the same *gates*.
 
+## Scope — is this the right document?
+
+This is the **first-time** bring-up: a module that has never been standardised.
+It is eight phases, eight PRs, and one fresh session per module.
+
+If the target is **already** on this standard and you are forwarding one later
+skeleton improvement into it, this document is the wrong size for the job. Use
+the sync checklist in the reference's README instead — *Syncing skeleton changes
+into a derived module* — and come back here only for a phase the target never
+took at all.
+
+Tell which you are looking at: a standardised target has a `ci/` layout, a
+`ci.yml` orchestrator as its sole `pull_request` entry point, and `ci/linter/`.
+
 ---
 
 ## Context you are given
@@ -135,6 +149,24 @@ Also port, adapting paths:
 
 Members are `workflow_call:`-only; only `ci.yml` has `pull_request:`. Two entry
 points run everything twice per PR and defeat the laning.
+
+**Every job that runs `prove` must pin its own port band.** Test::Nginx binds
+`TEST_NGINX_PORT`, default 1984, and nothing arbitrates it; `builder02` runs six
+slots against one network, so two jobs on the default collide and the loser dies
+with `bind() to 127.0.0.1:1984 failed (98: Address already in use)` — which reads
+as a module regression and is not one. The reference declares a distinct
+job-level `TEST_BASE_PORT` per workflow (`build-test.yml` 19200, `ci-deep.yml`
+19400) and passes it as `TEST_NGINX_PORT`; `ci/linter/lint-ci-ports.sh` fails the
+build if a job starts the runtime driver without declaring a band. Give the
+target its own band — two workflows sharing one number is the same bug with more
+steps.
+
+`ci/tools/max-port.sh` proves a band is free and clear of the kernel ephemeral
+range, and **belongs before the first step that binds it**. In the reference it
+currently sits after `prove` and before the runtime suite, so `ci/t/` binds
+unverified; put it earlier in the target rather than copying that order. The
+whole value of the check is turning "unreproducible timeout" into a named
+failure, which it cannot do for a step that already ran.
 
 **Badges:** README badge block must list the workflows in the SAME ORDER as the
 `## CI` table in that README, and both must match reality — a badge for a
