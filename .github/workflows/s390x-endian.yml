@@ -28,9 +28,23 @@ name: s390x-endian
 # Action pins are repeated in every workflow in this repo -- keep them in sync:
 # actions/checkout@v5             -> 93cb6efe18208431cddfb8368fd83d5badbf9bfd
 # docker/setup-qemu-action@v3.6.0 -> 29109295f81e9208d7d86ff1c6c12d2833863392
+#
+# The container is pinned by DIGEST, not by the mutable `bookworm-slim` tag: it
+# is pulled twice per scheduled run onto a persistent self-hosted runner shared
+# with the package builds, and a tag repoint would change the toolchain under a
+# leg whose whole job is to be a stable second opinion. The digest is the
+# multi-arch INDEX digest, so --platform still selects the s390x manifest.
+# Refresh with:
+#   docker buildx imagetools inspect debian:bookworm-slim --format '{{.Manifest.Digest}}'
+# Not in .github/versions.env on purpose: compute-versions.sh rewrites that file
+# wholesale from a heredoc, so an entry it does not know how to resolve is
+# dropped at the next weekly bump -- silently unpinning this.
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # debian:bookworm-slim multi-arch index, resolved 2026-08-01. See the header
+  # for why it is pinned here and not in .github/versions.env.
+  DEBIAN_DIGEST: sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 
 on:
   schedule:
@@ -77,8 +91,18 @@ jobs:
               -v "$PWD:/src" -w /src \
               -e NGINX_VERSION="$NGINX_VERSION" \
               -e NO_CACHE=1 \
-              debian:bookworm-slim \
+              "debian@${DEBIAN_DIGEST}" \
               bash -euo pipefail -c '
+                  # The leg is worthless if the container is not actually
+                  # s390x: a missing binfmt handler or a --platform that
+                  # silently fell back to the host makes every assertion below
+                  # a re-run of the amd64 build, green forever.
+                  arch="$(uname -m)"
+                  [ "$arch" = "s390x" ] || {
+                      echo "FAIL: container reports $arch, not s390x --" \
+                           "qemu binfmt registration did not take." >&2
+                      exit 1
+                  }
                   apt-get update -qq
                   apt-get install -y --no-install-recommends \
                       gcc libc6-dev libpcre2-dev zlib1g-dev curl ca-certificates \
@@ -92,28 +116,43 @@ jobs:
               '
 
       # NEGATIVE CONTROL -- prove the leg can SEE a signedness-shaped defect,
-      # not merely that it can run a binary. On s390x `char` is unsigned, so
-      # `c < 0` against a plain char is dead code there and live on amd64.
-      # Planting exactly that comparison must make this same emulated build
-      # fail, because ci/tests/unit/run.sh compiles our TUs with -Werror and
-      # gcc reports the always-false comparison.
+      # not merely that it can run a binary. Without it, a broken emulation
+      # setup (binfmt not registered, --platform silently falling back to the
+      # host) produces a green tick forever.
       #
-      # Without this step a broken emulation setup (binfmt not registered, the
-      # container silently running amd64) would produce a green tick forever.
+      # The planted code is a _Static_assert, NOT the `static int f(char c) {
+      # return c < 0; }` this step used to plant. That earlier probe was
+      # unusable as a control on two counts: an unused static function makes
+      # gcc emit -Wunused-function, which is -Werror here, so the build failed
+      # on AMD64 too and the step passed without the target ever being s390x;
+      # and the accepted-reason grep included the word `unused`, which matched
+      # that unrelated diagnostic. The control asserted its own verdict.
+      #
+      # `(char)-1 < 0` is false if and only if char is unsigned, so the
+      # assertion fires on s390x and on no other target this repo builds for.
+      # It is a hard compile error rather than a warning, so it does not depend
+      # on -Wextra or on any warning staying in -Werror, and its message is a
+      # string we choose -- which is what the grep matches, instead of guessing
+      # at gcc's wording.
       - name: Negative control -- a char-signedness bug is observable here
         run: |
           set -euo pipefail
           rm -rf "$RUNNER_TEMP/endian-nc"
           cp -a . "$RUNNER_TEMP/endian-nc"
           cd "$RUNNER_TEMP/endian-nc"
-          printf '\nstatic int skel_planted_signedness_check(char c) { return c < 0; }\n' \
+          printf '\n_Static_assert((char)-1 < 0, "SKEL_PLANTED_CHAR_IS_UNSIGNED");\n' \
               >> src/ngx_http_skel_scan.c
           set +e
           docker run --rm --platform linux/s390x \
               -v "$PWD:/src" -w /src \
               -e NGINX_BUILD_MODE=module \
-              debian:bookworm-slim \
+              "debian@${DEBIAN_DIGEST}" \
               bash -euo pipefail -c '
+                  arch="$(uname -m)"
+                  [ "$arch" = "s390x" ] || {
+                      echo "SKEL_NC_WRONG_ARCH: $arch" >&2
+                      exit 97
+                  }
                   apt-get update -qq
                   apt-get install -y --no-install-recommends \
                       gcc libc6-dev git >/dev/null
@@ -122,16 +161,25 @@ jobs:
               ' > "$RUNNER_TEMP/endian-nc.log" 2>&1
           rc=$?
           set -e
+          if grep -q 'SKEL_NC_WRONG_ARCH' "$RUNNER_TEMP/endian-nc.log"; then
+            echo "FAIL: the control container was not s390x, so neither was" \
+                 "the build above. The leg proves nothing in this state." >&2
+            tail -50 "$RUNNER_TEMP/endian-nc.log" >&2
+            exit 1
+          fi
           if [ "$rc" -eq 0 ]; then
             echo "FAIL: a planted char-signedness bug built clean under" \
                  "qemu-s390x -- this leg would not have caught it." >&2
             tail -50 "$RUNNER_TEMP/endian-nc.log" >&2
             exit 1
           fi
-          grep -qiE 'always (true|false)|tautological|type-limits|unused' \
-              "$RUNNER_TEMP/endian-nc.log" || {
+          # Only the planted assertion counts. Any other failure -- a missing
+          # package, a network blip during apt-get, a broken bind mount -- is a
+          # build that died before reaching the question, and reading it as a
+          # held control is how a control quietly stops controlling.
+          grep -q 'SKEL_PLANTED_CHAR_IS_UNSIGNED' "$RUNNER_TEMP/endian-nc.log" || {
             echo "FAIL: the control build failed for an UNEXPECTED reason." >&2
-            echo "      Expected a tautological/always-false comparison error;" >&2
+            echo "      Expected the planted static assertion to fire;" >&2
             echo "      a different failure means the control proves nothing." >&2
             tail -50 "$RUNNER_TEMP/endian-nc.log" >&2
             exit 1

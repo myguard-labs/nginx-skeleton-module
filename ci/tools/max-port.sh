@@ -52,6 +52,15 @@ esac
 case "$WIDTH" in
     ''|*[!0-9]*) echo "ERROR: width must be numeric, got '$WIDTH'" >&2; exit 2 ;;
 esac
+
+# Force base 10 before ANY arithmetic. `$(( ))` reads a leading zero as octal,
+# so TEST_BASE_PORT=040000 evaluated to 16384 -- a band this script would have
+# cleared as safely below the ephemeral floor, while the python driver parses
+# --port with int() and binds 40000, inside it. The two disagreeing is worse
+# than either being wrong: the check passes and the bind races the kernel.
+BASE=$((10#$BASE))
+WIDTH=$((10#$WIDTH))
+
 if [ "$WIDTH" -lt 1 ]; then
     echo "ERROR: width must be at least 1, got $WIDTH" >&2
     exit 2

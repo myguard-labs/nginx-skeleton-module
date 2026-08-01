@@ -8,11 +8,27 @@
 #   ci/tools/ci-hang-guard.sh <soft_timeout_s> <artifact_dir> -- <cmd...>
 #
 # On timeout it writes, into <artifact_dir>:
-#   cmd.log            the wrapped command's own output
+#   cmd.log              the wrapped command's own output
 #   backtrace-<pid>.txt  a gdb all-thread backtrace per hung process
-#   nginx-debug-<pid>.txt  the SIGQUIT/abort dump nginx writes on request
-#   ps.txt             the process tree at the moment of the timeout
+#   ps.txt               the process tree at the moment of the timeout
+#   watchdog.log         the watchdog's own diagnostics, replayed on stderr
 # ...then kills the tree and exits 124, the same status timeout(1) uses.
+#
+# NO nginx-debug-<pid>.txt, and deliberately not: this header used to promise
+# one and capture_one() used to `kill -ABRT` every nginx in the tree to get it.
+# That did two wrong things and one useful one, which was none of them. nginx
+# installs handlers for HUP/USR1/USR2/WINCH/TERM/QUIT/ALRM/INT/IO/CHLD and
+# ignores SYS/PIPE -- there is no SIGABRT entry in its signal table -- so ABRT
+# took the DEFAULT action and simply terminated the worker. It produced no dump
+# to collect, and it did so on the line before gdb attached, so the backtrace
+# this tool exists to capture was taken against a process that had just been
+# killed by the capture itself. The debug report nginx can write comes from
+# `debug_points abort` in a debug build calling abort() at its own check
+# points; it is not reachable by signalling a stock binary from outside, and it
+# lands in that instance's error_log, whose path a generic wrapper does not
+# know (it is prefix-relative when unset). If a future fixture wants it, the
+# fixture -- which owns the prefix -- should collect its own error_log into
+# <artifact_dir>.
 #
 # WHY. A job-level `timeout-minutes:` produces exactly one artifact: the word
 # "cancelled". Every intermittent wedge in this class -- an event loop that
@@ -64,14 +80,11 @@ capture_one() {
     pid="$1"
     [ -d "/proc/$pid" ] || return 0
 
-    # nginx dumps a full debug report (connections, timers, request state) on
-    # SIGQUIT-with-debug-points; harmless for any other program, which simply
-    # ignores it or exits, and we are killing the tree anyway.
-    if [ -r "/proc/$pid/cmdline" ] && tr '\0' ' ' < "/proc/$pid/cmdline" \
-            | grep -q 'nginx'; then
-        kill -ABRT "$pid" 2>/dev/null || true
-    fi
-
+    # Nothing is signalled before the backtrace. The hung process must be left
+    # exactly as it was found: it IS the evidence, and any signal that the
+    # target does not explicitly handle terminates it (see the header on the
+    # SIGABRT this used to send). Killing happens after every capture, in the
+    # sweep at the bottom.
     [ -n "$GDB" ] || return 0
     out="$ARTDIR/backtrace-$pid.txt"
     if sudo -n true 2>/dev/null; then
@@ -125,8 +138,10 @@ CMD_PID=$!
     for pid in $(descendants "$CMD_PID"); do
         capture_one "$pid"
     done
-    # ABRT first (nginx writes its dump), then a beat, then the tree dies.
-    sleep 2
+    # Every capture is complete by here, so the tree is safe to kill. The
+    # descendants list is re-walked rather than reused: gdb attaching and
+    # detaching can change what is alive, and a stale list would leave a
+    # process behind holding the runner's workspace open.
     for pid in $(descendants "$CMD_PID"); do
         kill -KILL "$pid" 2>/dev/null || true
     done
