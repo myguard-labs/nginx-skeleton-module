@@ -13,7 +13,7 @@ it does nothing but burn CI minutes — clone it, rename it, and replace the sca
 logic with your own before it's useful for anything.
 
 It's a working nginx dynamic HTTP module plus the CI harness that the modules
-in this org converged on — the build, the tests, the fuzzer and eight workflows
+in this org converged on — the build, the tests, the fuzzer and the workflows
 are already wired.
 
 The point of the skeleton is not the ~350 lines of C. It is that the *gates* are
@@ -51,7 +51,7 @@ ci/                        everything that only exists to test/build the module
   t/                       Test::Nginx: modes, scan, false-positive negatives
   tests/unit/              C unit tests of the scan core — no nginx, no network
     test_scan.c            boundary values: the cap, the seam, the hold window
-    run.sh                 build (-Werror) + run; also the -m32/s390x entry point
+    run.sh                 build (-Werror) + run; CC="gcc -m32" for a 32-bit check
   fuzz/                    libFuzzer target + dict + seed corpus + regressions/
   vendor/nginx-tests/      upstream nginx/nginx-tests submodule (lib/Test/Nginx.pm)
   tools/
@@ -72,7 +72,7 @@ ci/                        everything that only exists to test/build the module
     fixtures/policy/       trees the policy checks must go RED on
   PROMPT-standardize-module.md  prompt: bring an existing module to this standard
 .githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
-.github/workflows/         twelve workflows, see below
+.github/workflows/         the CI workflows, see below
 ```
 
 ### Four test layers, and why each exists
@@ -126,11 +126,11 @@ linter README explains what each covers.
 
 ## CI
 
-Twelve workflows. A failure surfaces as a red run plus the uploaded artifact —
+A failure surfaces as a red run plus the uploaded artifact —
 no chat notifications wired.
 
 Only `ci.yml` has a `pull_request` trigger. The PR-time workflows below are
-`workflow_call` members it lanes, so a PR asks for one run, not eleven; the
+`workflow_call` members it lanes, so a PR asks for one run, not nine; the
 lane map and its measured durations live in `ci.yml`'s header comment.
 
 | Workflow | Trigger | Gates |
@@ -143,8 +143,6 @@ lane map and its measured durations live in `ci.yml`'s header comment.
 | `security-scanners.yml` | PR (via `ci.yml`) | flawfinder (≥4 blocks), clang-tidy (blocks), semgrep (advisory) |
 | `codeql.yml` | PR (via `ci.yml`) | CodeQL, **module TU only** |
 | `ci-deep.yml` | monthly + dispatch | 4h fuzz, 600s memcheck, 600s helgrind, **nginx mainline+stable+angie build & test matrix**, **coverage report** (a report, never a gate) |
-| `arch-32bit.yml` | weekly + dispatch | unit tests built **and run** under `-m32`: 4-byte `size_t`, where a length truncation the amd64 jobs cannot see becomes reachable |
-| `s390x-endian.yml` | weekly + dispatch | unit tests under qemu-s390x: **big-endian and unsigned `char`**, with a planted-bug negative control proving the leg can see a signedness defect |
 | `bump.yml` | weekly + dispatch | checks nginx.org/angie.software for newer pins, updates `ci/vendor/nginx-tests` submodule, commits+pushes to main if anything moved |
 
 PR-time jobs are the fast half; the slow half is deliberately out-of-band so the

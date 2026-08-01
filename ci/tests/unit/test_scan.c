@@ -28,12 +28,29 @@
  * allocator/log symbols that ngx_string.c drags in, and aborts if the scan path
  * ever actually reaches one.
  *
- * PORTABILITY: this binary is also built and RUN under -m32
- * (.github/workflows/arch-32bit.yml) and under qemu-s390x, big-endian with
- * unsigned char (.github/workflows/s390x-endian.yml). Keep every case free of
- * host assumptions: no sizeof-dependent expected values, no signed-char
- * comparisons, no pointer-width arithmetic in an expectation. A case that can
- * only pass on amd64 turns those two legs into noise.
+ * PORTABILITY: keep every case free of host assumptions -- no sizeof-dependent
+ * expected values, no signed-char comparisons, no pointer-width arithmetic in
+ * an expectation. This is a CONVENTION, not something CI enforces: every job
+ * in this repo runs amd64, where size_t is 8 bytes and char is signed.
+ *
+ * Two non-amd64 legs used to exist and both were removed on 2026-08-01 (see
+ * memory issues.md). qemu-s390x never once reached this code: builder02's
+ * runner slots cannot emulate s390x. -m32 did work; it went on the same call.
+ *
+ * Three separate properties went with them, and they are worth keeping apart --
+ * s390x happened to carry two of them at once, which is not the same as their
+ * being one axis:
+ *
+ *   * pointer/size_t width. Reproduce natively: `CC="gcc -m32"`.
+ *   * plain `char` signedness, which is implementation-defined and independent
+ *     of byte order. Reproduce natively too: `CC="gcc -funsigned-char"` (or
+ *     -fsigned-char) needs no emulation at all, so a derived module that
+ *     classifies high-bit bytes has no excuse for leaving it untested.
+ *   * byte order. This one genuinely needs a big-endian target, and it is the
+ *     property nothing here can reproduce. It stays latent while the scan core
+ *     decodes no multi-byte integers off the wire, and becomes live the moment
+ *     a derived module parses a length prefix or a binary protocol -- that
+ *     module needs its own leg.
  *
  * Extend: add a CASE() function and one line in main(). Keep each case
  * asserting a value the CORRECT implementation produces and a BROKEN one does

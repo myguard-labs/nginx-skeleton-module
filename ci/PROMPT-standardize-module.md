@@ -56,7 +56,7 @@ gh run list -R myguard-labs/<module-name> --limit 20 \
 Record, in the memory mirror's `index.md`:
 
 - current layout (which of `t/`, `tests/`, `fuzz/`, `ci/` exist)
-- current workflow list and which of the reference's nine are missing
+- current workflow list and which of the reference's (Phase 2 table) are missing
 - **measured wall-clock per workflow** from `gh run list` — you need real
   numbers for the lane work in Phase 7. Estimates are not acceptable there.
 - current coverage number, if any tooling exists (usually none)
@@ -107,9 +107,9 @@ Rules:
 
 ## Phase 2 — workflows and badges
 
-Bring the target to the reference's **twelve** workflows. Do not copy blindly:
-each one carries reference-specific paths and pins that must be re-derived for
-the target.
+Bring the target to the reference's workflow set, listed below. Do not copy
+blindly: each one carries reference-specific paths and pins that must be
+re-derived for the target.
 
 | Workflow | What it must gate in the target |
 |---|---|
@@ -123,8 +123,6 @@ the target.
 | `codeql.yml` | CodeQL over the **module TU only** |
 | `ci-deep.yml` | monthly: long fuzz, memcheck, helgrind, nginx mainline+stable+angie matrix |
 | `bump.yml` | weekly pin bump + `ci/vendor/nginx-tests` submodule update |
-| `arch-32bit.yml` | weekly: build + unit tests on 32-bit, where `size_t` is 32 bits and a length calculation that cannot overflow on amd64 can |
-| `s390x-endian.yml` | weekly: build + unit tests under qemu-s390x, where `char` is UNSIGNED and byte order is big-endian |
 
 Also port, adapting paths:
 
