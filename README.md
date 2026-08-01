@@ -302,12 +302,19 @@ already on the standard and you are forwarding a specific improvement.
   must *prove* is the Phase 2 table in the prompt.
 - **Check the four drift classes first** — none is visible from a green run,
   each has bitten a module here:
-  - `prove` invoked with no `TEST_NGINX_PORT`. Test::Nginx's default 1984 is
-    unarbitrated and `builder02` runs six slots against one network — the
-    collision reads as a module regression (`bind() … Address already in use`).
-  - `--gcov-object-directory` in `ci/tools/coverage.sh` fails argparse on
-    gcovr < 7.0. Only matters where gcovr is unpinned and the runner is not
-    controlled — the fork arm's `ubuntu-latest`.
+  - a job that binds test ports without its own declared band. Presence of
+    `TEST_NGINX_PORT` is not the check — the check is a **distinct job-level
+    band**, verified free with `ci/tools/max-port.sh` before anything binds it.
+    Test::Nginx's default 1984 is unarbitrated and `builder02` runs six slots
+    against one network, so the collision reads as a module regression
+    (`bind() … Address already in use`). Note the reference itself currently
+    runs that verification before the *runtime* suite only, not before `prove`.
+  - `--gcov-object-directory` in `ci/tools/coverage.sh`. The condition is the
+    **gcovr major version the job actually runs**, not whether the pin exists:
+    the `--gcov-`-prefixed spelling arrived in gcovr 7.0 and fails argparse
+    below it. `--object-directory` is accepted by both and is the portable
+    choice for a target whose runner gcovr you do not control — the fork arm's
+    `ubuntu-latest`.
   - a `.github/versions.env` consumer that sources the file without validating
     it executes any line that is not a pin.
   - `ci/linter/workflow_policy.py` older than the YAML-parse rewrite matches
