@@ -67,6 +67,57 @@ fi
 # real run so this stays independent of which linters are installed.
 case_ 0 "--list works" ci/linter/run-all.sh --list
 
+# ----------------------------------------------------------------------------
+# workflow_policy.py -- the red path of each policy check.
+#
+# Every fixture below encodes a bypass that VALID YAML used to walk straight
+# through while the checks parsed workflows by regex. Each was verified in both
+# directions when it was written: red on the current parser, green on the
+# regex one. They are committed rather than planted in .github/workflows/ at
+# runtime so no cleanup failure can leave a probe workflow in the live tree.
+#
+# Extend: add a fixture directory with its own .github/workflows/ and a README
+# stating which bypass it encodes, then a policy_ line here.
+
+policy_() {  # policy_ <expected-exit> <fixture> <subcommand>
+    local want="$1" fixture="$2" cmd="$3"
+    case_ "$want" "policy $cmd: $fixture" \
+        env "WORKFLOW_POLICY_ROOT=ci/linter/fixtures/policy/$fixture" \
+        python3 ci/linter/workflow_policy.py "$cmd"
+}
+
+# THE control that makes the rest mean anything: a fixture tree that is simply
+# a valid workflow must be GREEN on all three. Without it, a red on any bypass
+# fixture could be the fixture shape rather than the bypass.
+policy_ 0 clean runners
+policy_ 0 clean ports
+policy_ 0 clean docs
+
+# A `.yaml` workflow was invisible to every check: unchecked runner, unchecked
+# ports, undocumented gate.
+policy_ 1 bypass-yaml-extension runners
+policy_ 1 bypass-yaml-extension docs
+
+# `on: [pull_request]` / `on: pull_request` are the same trigger as the mapping
+# form; both used to skip the runner-trust check, as did an inline
+# pull_request_target.
+policy_ 1 bypass-inline-events runners
+
+# `runtime:  # comment` used to yield zero jobs, so a runtime-bearing job with
+# no port band reported "no runtime-bearing jobs" and exit 0.
+policy_ 1 bypass-commented-job-key ports
+
+# Unparseable YAML is "could not run" (2), never "clean" -- GitHub may still
+# read a file this parser rejects, so a verdict over the rest of the tree would
+# be unsupported. Fixture is generated: a committed broken-YAML file would trip
+# yamllint on the real tree.
+badroot="$(mktemp -d)"
+trap 'rm -rf "$badroot"' EXIT
+mkdir -p "$badroot/.github/workflows"
+printf 'on: [pull_request\njobs: {\n' > "$badroot/.github/workflows/broken.yml"
+case_ 2 "policy runners: unparseable YAML is exit 2, not clean" \
+    env "WORKFLOW_POLICY_ROOT=$badroot" python3 ci/linter/workflow_policy.py runners
+
 if [ "$rc" -eq 0 ]; then
     echo "== lint gate selftest: all controls held =="
 else

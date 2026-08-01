@@ -68,6 +68,8 @@ ci/                        everything that only exists to test/build the module
     run-all.sh             every checker; what the pre-commit hook runs
     install-linters.sh     apt-get -> pipx -> cpan -> upstream binary
     workflow_policy.py     repo-policy checks over .github/workflows/
+    selftest.sh            negative controls for the gate itself
+    fixtures/policy/       trees the policy checks must go RED on
   PROMPT-standardize-module.md  prompt: bring an existing module to this standard
 .githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
 .github/workflows/         twelve workflows, see below

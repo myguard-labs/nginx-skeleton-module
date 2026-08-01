@@ -24,12 +24,37 @@ regression, and nothing enforces the copy.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - exercised by the selftest doc
+    print(
+        "workflow_policy: PyYAML not installed (apt-get install python3-yaml).\n"
+        "  Refusing to run rather than degrading to a regex scan: every check\n"
+        "  here was bypassable by VALID YAML while it parsed workflows by\n"
+        "  regex, which is the vacuous-gate shape this file exists to prevent.",
+        file=sys.stderr,
+    )
+    raise SystemExit(2) from None
+
+# WORKFLOW_POLICY_ROOT points the checks at a fixture tree instead of the repo.
+# It exists so ci/linter/selftest.sh can assert the FAILING direction of every
+# check against a committed, readable fixture -- rather than by planting a file
+# in the live .github/workflows/ and hoping the cleanup runs. A check whose red
+# path is never exercised is indistinguishable from one that cannot go red.
+ROOT = pathlib.Path(
+    os.environ.get("WORKFLOW_POLICY_ROOT")
+    or pathlib.Path(__file__).resolve().parents[2]
+)
 WORKFLOWS = ROOT / ".github" / "workflows"
+
+
+class PolicyError(Exception):
+    """Could not run the check (exit 2) -- never confused with "clean"."""
 
 
 def _trust_split(labels: list[str]) -> str:
@@ -76,7 +101,71 @@ RUNTIME_DRIVER = "ci/tools/test_runtime.py"
 
 
 def workflows() -> list[pathlib.Path]:
-    return sorted(WORKFLOWS.glob("*.yml"))
+    """Every workflow file, BOTH extensions.
+
+    GitHub reads `*.yml` and `*.yaml` alike. Globbing one of them made all three
+    checks below skip a `.yaml` workflow entirely -- an undocumented, unchecked,
+    possibly self-hosted PR entry point that reported clean.
+    """
+    return sorted(
+        [*WORKFLOWS.glob("*.yml"), *WORKFLOWS.glob("*.yaml")],
+        key=lambda p: p.name,
+    )
+
+
+def load(path: pathlib.Path) -> dict:
+    """Parse a workflow. A file that will not parse is exit 2, never clean."""
+    try:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise PolicyError(f"{path.name}: unparseable YAML: {exc}") from exc
+    if not isinstance(doc, dict):
+        raise PolicyError(f"{path.name}: top level is not a mapping")
+    return doc
+
+
+def events(doc: dict) -> set[str]:
+    """The trigger names, from any of the three legal `on:` spellings.
+
+    `on: [pull_request]`, `on: pull_request` and the indented mapping form mean
+    exactly the same thing to GitHub. Only the mapping form was recognised
+    before, so the two others walked past the runner-trust check.
+
+    PyYAML resolves the bare key `on` to the boolean True (YAML 1.1 truthiness),
+    so the True key is where the node actually lands unless it was quoted.
+    """
+    node = doc.get("on", doc.get(True))
+    if isinstance(node, str):
+        return {node}
+    if isinstance(node, list):
+        return {str(e) for e in node}
+    if isinstance(node, dict):
+        return {str(k) for k in node}
+    return set()
+
+
+def jobs(doc: dict) -> list[tuple[str, dict]]:
+    """(name, node) for every job. A non-mapping `jobs:` yields nothing."""
+    node = doc.get("jobs")
+    if not isinstance(node, dict):
+        return []
+    return [(str(k), v) for k, v in node.items() if isinstance(v, dict)]
+
+
+def selector(node) -> str:
+    """Render a `runs-on:` node back to one comparable string.
+
+    The list and mapping forms are rendered rather than flattened so that a
+    `runs-on: [self-hosted, builder02]` fails the membership test as ONE finding
+    naming the whole selector, instead of one confusing finding per label.
+    """
+    if isinstance(node, str):
+        return node.strip()
+    if isinstance(node, list):
+        return "[" + ", ".join(selector(v) for v in node) + "]"
+    if isinstance(node, dict):
+        return "{" + ", ".join(f"{k}: {selector(v)}" for k, v in node.items()) + "}"
+    return str(node)
 
 
 def report(name: str, errors: list[str], ok_msg: str) -> int:
@@ -96,12 +185,13 @@ def report(name: str, errors: list[str], ok_msg: str) -> int:
 def check_runners() -> int:
     errors: list[str] = []
     for path in workflows():
-        text = path.read_text(encoding="utf-8")
+        doc = load(path)
+        trigger = events(doc)
 
         # pull_request_target runs with the BASE repo's secrets against the
         # HEAD's code. There is no configuration of it that is safe here, so it
         # is refused outright rather than conditioned.
-        if re.search(r"(?m)^\s{2}pull_request_target\s*:", text):
+        if "pull_request_target" in trigger:
             errors.append(f"{path.name}: pull_request_target is forbidden")
 
         # PR-REACHABLE, not just pull_request-triggered. Every heavy workflow in
@@ -112,19 +202,28 @@ def check_runners() -> int:
         # `pull_request:` trigger would therefore pass every single one of them
         # while checking nothing, which is precisely the vacuous-gate shape this
         # repo keeps re-learning.
-        reachable = re.search(r"(?m)^\s{2}(pull_request|workflow_call)\s*:", text)
-        if not reachable:
+        if not trigger & {"pull_request", "workflow_call"}:
             continue
 
-        runners = re.findall(r"(?m)^\s+runs-on:\s*(.+?)\s*$", text)
-        if not runners:
-            errors.append(f"{path.name}: PR-reachable workflow declares no runner")
+        wf_jobs = jobs(doc)
+        if not wf_jobs:
+            errors.append(f"{path.name}: PR-reachable workflow declares no jobs")
             continue
-        for runner in runners:
+        for job, node in wf_jobs:
+            # A `uses:` job is a call into another workflow, which carries its
+            # own runs-on and is checked as its own file. It owes no runner.
+            if "uses" in node:
+                continue
+            if "runs-on" not in node:
+                errors.append(
+                    f"{path.name}:{job} is PR-reachable and declares no runs-on"
+                )
+                continue
+            runner = selector(node["runs-on"])
             if runner in TRUST_SPLITS or HOSTED.fullmatch(runner):
                 continue
             errors.append(
-                f"{path.name}: PR-reachable job has runs-on: {runner} -- must be "
+                f"{path.name}:{job} has runs-on: {runner} -- must be "
                 "GitHub-hosted or an approved fork-aware trust split "
                 "(see TRUST_SPLITS in ci/linter/workflow_policy.py)"
             )
@@ -139,22 +238,17 @@ def check_runners() -> int:
 # ports
 
 
-def _jobs(text: str) -> list[tuple[str, str]]:
-    """Split a workflow into (job-name, job-body) pairs.
+def _body(node: dict) -> str:
+    """A job node re-serialised, for the substring questions asked below.
 
-    A regex split, not a YAML parse, and deliberately so: the body is needed
-    verbatim (comments included) and job keys are always at exactly two spaces
-    of indentation under `jobs:` in this repo's files. A YAML parse would also
-    work, but it would make this checker depend on PyYAML being installed --
-    and a checker that skips itself when a module is missing is the vacuous
-    gate this file exists to prevent.
+    The job SPLIT is structural (see jobs()); only the "does this job mention
+    the driver / --port" questions are textual, and those are asked of this
+    normalised dump rather than of the file. Two consequences, both wanted: a
+    comment can no longer hide a job from the split -- `runtime: # note` used
+    to yield ZERO jobs and a cheerful "no runtime-bearing jobs" -- and a port
+    mentioned only in a comment no longer counts as a declaration.
     """
-    m = re.search(r"(?m)^jobs:\s*$", text)
-    if not m:
-        return []
-    body = text[m.end() :]
-    parts = re.split(r"(?m)^  (\w[\w-]*):\s*$", body)
-    return list(zip(parts[1::2], parts[2::2]))
+    return yaml.safe_dump(node, default_flow_style=False, sort_keys=False)
 
 
 def check_ports() -> int:
@@ -162,9 +256,10 @@ def check_ports() -> int:
     bands: dict[str, str] = {}  # port value -> "file:job" that claimed it
 
     for path in workflows():
-        text = path.read_text(encoding="utf-8")
-        for job, body in _jobs(text):
-            declared = re.search(r"(?m)^\s+TEST_BASE_PORT:\s*[\"']?(\d+)", body)
+        doc = load(path)
+        for job, node in jobs(doc):
+            body = _body(node)
+            declared = re.search(r"(?m)^\s*TEST_BASE_PORT:\s*[\"']?(\d+)", body)
             starts_runtime = RUNTIME_DRIVER in body
             where = f"{path.name}:{job}"
 
@@ -248,7 +343,7 @@ def check_docs() -> int:
     # Only PATH-QUALIFIED references. A bare "ci.yml" in prose could mean any
     # file; ".github/workflows/ci.yml" is unambiguously a claim that this repo
     # has that workflow, which is the claim worth checking.
-    for ref in sorted(set(re.findall(r"\.github/workflows/([\w.-]+\.yml)", text))):
+    for ref in sorted(set(re.findall(r"\.github/workflows/([\w.-]+\.ya?ml)", text))):
         if ref not in names:
             errors.append(
                 f"README.md references .github/workflows/{ref}, which does not "
@@ -275,7 +370,15 @@ def main(argv: list[str]) -> int:
     if not WORKFLOWS.is_dir():
         print(f"no {WORKFLOWS} -- wrong tree?", file=sys.stderr)
         return 2
-    return COMMANDS[argv[1]]()
+    try:
+        return COMMANDS[argv[1]]()
+    except PolicyError as exc:
+        # 2, not 1: the check did not RUN. A workflow this file cannot parse is
+        # also a workflow GitHub may read differently, so reporting "clean" or
+        # even "findings" over the rest of the tree would be a claim the run
+        # cannot support.
+        print(f"workflow_policy: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

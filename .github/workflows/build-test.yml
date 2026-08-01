@@ -91,8 +91,15 @@ jobs:
           # not reliable across checkout layouts, and without the config every
           # self-hosted runner label ("builder02", "lxc") is flagged as unknown --
           # which is how this lint step becomes noise everyone ignores.
+          # Both extensions: GitHub runs *.yaml workflows too, and a glob of
+          # *.yml alone left one unlinted -- the same blind spot the policy
+          # linters had. nullglob so an absent extension expands to nothing
+          # rather than handing actionlint a literal unmatched pattern.
+          shopt -s nullglob
+          files=(.github/workflows/*.yml .github/workflows/*.yaml)
+          [ "${#files[@]}" -gt 0 ] || { echo "no workflows found" >&2; exit 1; }
           /tmp/actionlint -color -config-file .github/actionlint.yaml \
-            .github/workflows/*.yml
+            "${files[@]}"
 
   build:
     name: Build

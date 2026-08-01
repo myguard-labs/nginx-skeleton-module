@@ -45,6 +45,17 @@ APT_TOOLS=(
     "perlcritic:libperl-critic-perl"  # Perl test suite
     "perl:perl"
 )
+# Python IMPORTS, not executables, so `command -v` cannot see them and they
+# need their own list -- checked with `python3 -c "import <mod>"`.
+#
+# PyYAML is a hard requirement of ci/linter/workflow_policy.py, which refuses
+# to run without it rather than falling back to a regex scan. Every policy
+# check it makes was bypassable by valid YAML while it parsed workflows by
+# regex, so "degrade quietly to the old behaviour" is the one option that is
+# worse than failing the job.
+PY_MODULES=(
+    "yaml:python3-yaml"          # ci/linter/workflow_policy.py
+)
 # Not in Debian/Ubuntu at the versions this repo targets -> Python packaging.
 # pipx, not pip: PEP 668 marks the system interpreter externally-managed, so a
 # bare `pip3 install` fails on Debian 12+ and `--break-system-packages` is a
@@ -77,11 +88,22 @@ report() {
     printf '%-14s %s\n' "$1" "$(command -v "$1" 2>/dev/null || echo MISSING)"
 }
 
+have_mod() { python3 -c "import $1" >/dev/null 2>&1; }
+
 if [ "$CHECK" -eq 1 ]; then
     step "linter status"
     for e in "${APT_TOOLS[@]}" "${PIPX_TOOLS[@]}"; do report "${e%%:*}"; done
     report actionlint
     report zizmor
+    for e in "${PY_MODULES[@]}"; do
+        mod="${e%%:*}"
+        if have_mod "$mod"; then
+            printf '%-14s ok (python module)\n' "$mod"
+        else
+            printf '%-14s MISSING (apt: %s)\n' "$mod" "${e##*:}"
+            rc=1
+        fi
+    done
     perl -MTest::Nginx::Socket -e1 2>/dev/null \
         && printf '%-14s ok\n' 'Test::Nginx' \
         || { printf '%-14s MISSING\n' 'Test::Nginx'; rc=1; }
@@ -93,6 +115,10 @@ NEED=()
 for e in "${APT_TOOLS[@]}"; do
     tool="${e%%:*}"; pkg="${e##*:}"
     if [ "$FORCE" -eq 1 ] || ! have "$tool"; then NEED+=("$pkg"); fi
+done
+for e in "${PY_MODULES[@]}"; do
+    mod="${e%%:*}"; pkg="${e##*:}"
+    if [ "$FORCE" -eq 1 ] || ! have_mod "$mod"; then NEED+=("$pkg"); fi
 done
 if [ "${#NEED[@]}" -gt 0 ]; then
     echo "installing: ${NEED[*]}"

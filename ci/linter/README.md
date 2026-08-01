@@ -21,6 +21,8 @@ finding shellcheck could have named in two seconds. Every script is standalone;
 | `install-linters.sh` | — | apt-get → pipx → cpan → upstream binary |
 | `lib.sh` | — | sourced helpers (file selection, missing-tool failure) |
 | `workflow_policy.py` | — | the three repo-policy checks the `ci-*`/`docs-drift` wrappers call |
+| `selftest.sh` | — | negative controls for the gate itself; run before the linters in `lint.yml` |
+| `fixtures/policy/` | — | workflow trees the policy checks must go RED on, one per known bypass |
 
 Rule config lives at the repo root so editors and these scripts agree:
 `.yamllint` (workflow-shaped YAML), `.perlcriticrc` (Test::Nginx-shaped Perl).
@@ -319,6 +321,19 @@ why `lint-c.sh` must be edited in the same commit as that workflow.
   RELEVANCE test only — every one of these checks compares whole SETS, so a
   narrowed file list would let a deletion through whenever the counterpart file
   was the only one staged.
+  **Then add a fixture under `fixtures/policy/` and a `policy_` line in
+  `selftest.sh`.** A policy check whose red path is never exercised is
+  indistinguishable from one that cannot go red — all three of these shipped
+  bypassable by valid YAML (a `.yaml` extension, an inline `on: [pull_request]`,
+  a comment after a job key) and every one of them reported clean while doing it.
+  Point a check at a fixture tree with `WORKFLOW_POLICY_ROOT=<dir>`.
+- **Parse workflows with PyYAML, never with a regex over the file text.** The
+  three checks here were originally regex-based, and the file argued in a
+  docstring that a YAML parse would add a dependency that might be missing.
+  Both halves were wrong: yamllint already makes PyYAML a hard dependency of
+  the same gate, and every regex was walked past by valid YAML that GitHub
+  reads exactly as the shape the regex expected. `workflow_policy.py` now exits
+  2 when PyYAML is absent rather than degrading.
 - New file type: drop a `ci/linter/lint-<name>.sh` in place — `run-all.sh`
   picks it up by glob. Keep "no files of this kind" exiting 0, and fail with
   exit 2 (via `need`) when the tool is absent.
