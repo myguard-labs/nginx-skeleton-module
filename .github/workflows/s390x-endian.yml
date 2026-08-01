@@ -72,10 +72,51 @@ jobs:
       - name: Load version pins
         run: bash .github/scripts/load-versions.sh
 
+      # Ask whether s390x ALREADY works before registering anything. The
+      # self-hosted runner's host carries a persistent, F-flagged qemu-s390x
+      # handler from Debian's qemu-user-static + systemd-binfmt, and it works:
+      # `docker run --platform linux/s390x <image> uname -m` prints s390x with
+      # no action involved. A GitHub-hosted runner (the fork arm) has no such
+      # handler and needs the action. Probing tells the two apart instead of
+      # assuming, and re-registering over a working handler is what broke the
+      # first real run of this leg -- run 30712491397, where the action reported
+      # "installing: s390x OK" and the very next step died with
+      # `exec /usr/bin/bash: exec format error`.
+      - name: Probe for a working s390x binfmt handler
+        id: binfmt
+        run: |
+          set -uo pipefail
+          if timeout 120 docker run --rm --platform linux/s390x \
+               "debian@${DEBIAN_DIGEST}" uname -m 2>/dev/null | grep -qx s390x; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "s390x emulation already works on this runner; not re-registering"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "no working s390x handler; will register one"
+          fi
+
       - name: Register qemu-user binfmt handlers
+        if: steps.binfmt.outputs.present != 'true'
         uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
         with:
           platforms: s390x
+
+      # Whichever path got us here, prove emulation works BEFORE the build step
+      # spends minutes on it. Without this the failure surfaces as an
+      # `exec format error` from whatever ran first, which reads like a broken
+      # image rather than a missing handler.
+      - name: Assert s390x emulation is usable
+        run: |
+          set -euo pipefail
+          arch="$(timeout 120 docker run --rm --platform linux/s390x \
+                    "debian@${DEBIAN_DIGEST}" uname -m)"
+          [ "$arch" = "s390x" ] || {
+            echo "FAIL: emulated container reports '$arch', not s390x." >&2
+            echo "      Neither the pre-existing handler nor the action" >&2
+            echo "      produced working s390x emulation on this runner." >&2
+            exit 1
+          }
+          echo "OK: s390x emulation confirmed before the build"
 
       # The toolchain runs INSIDE the emulated container, so the objects are
       # real s390x ELF built by a native-to-that-target gcc -- no cross
