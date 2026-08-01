@@ -50,9 +50,16 @@ jobs:
                    ci/linter/*.sh .githooks/pre-commit; do
             bash -n "$s"
           done
-          # -x + --source-path so `. lib.sh` resolves; a bare shellcheck run
+          # -S warning, matching ci/linter/lint-sh.sh exactly. The two
+          # thresholds must agree or local-green stops predicting remote-green,
+          # which is the only reason ci/linter/ exists. At the default severity
+          # this step also fails on style/info findings the local gate passes
+          # (SC2015, SC2001), so widening the file list without matching the
+          # severity turns a green tree red for findings nothing else gates on.
+          #
+          # -x + --source-path so `. lib.sh` resolves; without them shellcheck
           # reports SC1091 on every linter and misses what lib.sh defines.
-          shellcheck -x --source-path=ci/linter \
+          shellcheck -S warning -x --source-path=ci/linter \
             ci/tools/*.sh ci/fuzz/build.sh ci/tests/unit/run.sh \
             ci/linter/*.sh .githooks/pre-commit
           cppcheck \

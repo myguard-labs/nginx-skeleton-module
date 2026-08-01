@@ -31,7 +31,23 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 
-# The approved runner selectors. Both keep FORK pull requests on a
+
+def _trust_split(labels: list[str]) -> str:
+    """The one approved runner selector shape, for a given self-hosted label set.
+
+    Built rather than pasted three times: the FORK ARM is the security-relevant
+    half and must be byte-identical in every accepted form. Three hand-written
+    copies drift, and a drifted copy is silently accepted by the membership test
+    below while meaning something slightly different.
+    """
+    inner = ",".join(f'"{label}"' for label in labels)
+    return (
+        "${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || "
+        + f"fromJSON('[{inner}]') }}}}"
+    )
+
+
+# Accepted self-hosted label sets. Each keeps FORK pull requests on a
 # GitHub-hosted runner and everything else on the self-hosted pool.
 #
 # Why the split matters here specifically: a `pull_request`-triggered job checks
@@ -41,18 +57,15 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 # left behind still on disk. The hosted arm is what makes this repo safe to
 # accept outside contributions to -- which a public template repo exists to do.
 #
-# Add a form here ONLY if it preserves fork -> hosted / trusted -> self-hosted.
-# Widening the self-hosted label set inside the second arm is fine (it only
-# changes WHICH slots are eligible); moving the fork arm is not.
+# Widening the label set only changes WHICH slots are eligible, so a new entry
+# here is fine. Changing the fork arm is not, which is why it is not a parameter.
 TRUST_SPLITS = frozenset(
-    {
-        "${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || "
-        'fromJSON(\'["self-hosted","builder02","lxc"]\') }}',
-        "${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || "
-        'fromJSON(\'["self-hosted","builder02"]\') }}',
-        "${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || "
-        'fromJSON(\'["self-hosted","builder02","docker"]\') }}',
-    }
+    _trust_split(labels)
+    for labels in (
+        ["self-hosted", "builder02", "lxc"],
+        ["self-hosted", "builder02"],
+        ["self-hosted", "builder02", "docker"],
+    )
 )
 
 HOSTED = re.compile(r"ubuntu-(?:latest|[0-9]+\.[0-9]+)")
