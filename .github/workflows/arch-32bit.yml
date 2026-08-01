@@ -1,0 +1,102 @@
+name: arch-32bit
+
+# Build and RUN the scan-core unit tests as a 32-bit binary.
+#
+# WHAT THIS CATCHES THAT NOTHING ELSE IN THE SUITE DOES. Every other job in this
+# repo builds amd64, where size_t/off_t/ptrdiff_t are 8 bytes. Under -m32 they
+# are 4. The scan core does length arithmetic on attacker-controlled sizes --
+# the cap clamp, the seam carry, the hold window -- and a truncation or an
+# overflow that is unreachable at 64 bits is reachable at 32. It produces no
+# warning on either target, so ASan, Valgrind, CodeQL and the fuzzers on amd64
+# all stay green while a 32-bit consumer host has a live bug.
+#
+# BUILDING is not enough; the tests are RUN. A build-only leg proves the types
+# still compile, which is the half that was never in doubt. A wrong runtime
+# VALUE (a length that wrapped) compiles and links perfectly.
+#
+# Off the PR path, on purpose. This leg installs a whole i386 cross-toolchain
+# (dpkg --add-architecture i386 + apt update + multilib + :i386 -dev packages)
+# on every run, which is minutes of apt against a PR gate whose other checks
+# cost seconds -- and a width bug is not introduced by a typical diff any faster
+# than a weekly cadence catches it. Scheduled at an off-hour minute, staggered
+# against s390x-endian.yml (Tuesday 05:43) and codeql.yml so the scheduled
+# workflows do not queue at the same instant.
+#
+# Action pins are repeated in every workflow in this repo -- keep them in sync:
+# actions/checkout@v5 -> 93cb6efe18208431cddfb8368fd83d5badbf9bfd
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  schedule:
+    - cron: '51 5 * * 3'
+  workflow_dispatch: {}
+
+concurrency:
+  # Unique prefix per workflow. A group string matching another workflow's
+  # cancels that one instead of a stale copy of this.
+  group: arch32-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unit-32bit:
+    name: Unit tests under -m32
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Load version pins
+        run: bash .github/scripts/load-versions.sh
+
+      - name: Install the 32-bit toolchain
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gcc-multilib libc6-dev-i386 curl \
+            libpcre2-dev:i386 zlib1g-dev:i386
+
+      # `module` mode, not `debug`: the unit tests need the CONFIGURED tree
+      # (objs/ngx_auto_config.h) and src/core/ngx_string.c, not a server binary.
+      # Building the nginx core 32-bit as well would multiply this leg's cost
+      # for coverage it does not add -- nothing here runs a server.
+      - name: Configure and build the module as 32-bit
+        env:
+          CC: gcc -m32
+          # No ccache/mold here: NO_CACHE keeps the -m32 objects out of a cache
+          # shared with the amd64 jobs. A 32-bit object served to an amd64 build
+          # (or the reverse) is the same class of failure the per-mode build
+          # trees exist to prevent, and it fails at link time with a message
+          # that names neither cause.
+          NO_CACHE: '1'
+        run: bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" module
+
+      - name: Build and run the unit tests as 32-bit
+        env:
+          CC: gcc -m32
+          NGINX_BUILD_MODE: module
+        run: bash ci/tests/unit/run.sh
+
+      # Prove -m32 was not silently ignored. A toolchain missing the 32-bit
+      # runtime can fall back to a 64-bit build, and then this whole leg is a
+      # slow duplicate of the amd64 unit job while claiming to be width
+      # coverage. `file` reports the ELF class directly.
+      - name: The test binary is actually ELF32
+        run: |
+          set -euo pipefail
+          bin=ci/tests/unit/test_scan
+          file "$bin"
+          file "$bin" | grep -q 'ELF 32-bit' || {
+            echo "FAIL: $bin is not ELF 32-bit -- the -m32 build did not" \
+                 "produce a 32-bit binary, so this leg proved nothing." >&2
+            exit 1
+          }
+          echo "OK: unit tests ran as a 32-bit binary"

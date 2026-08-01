@@ -14,9 +14,15 @@ finding shellcheck could have named in two seconds. Every script is standalone;
 | `lint-python.sh` | `*.py` | `ruff check` + `ruff format --check` |
 | `lint-perl.sh` | `ci/t/*.t`, `*.pl`, `*.pm` | `perl -c` + perlcritic severity ≥4 |
 | `lint-yaml.sh` | `*.yml`, `*.yaml` | yamllint (errors block, warnings visible), actionlint + zizmor (`--persona=pedantic`) on `.github/workflows/` |
+| `lint-ci-runners.sh` | `.github/workflows/` | fork PRs never select the self-hosted pool; `pull_request_target` forbidden |
+| `lint-ci-ports.sh` | `.github/workflows/` | every runtime-bearing job declares a distinct `TEST_BASE_PORT` band and binds it |
+| `lint-docs-drift.sh` | `.github/workflows/`, `README.md` | every workflow documented, every documented workflow exists |
 | `run-all.sh` | all of the above | runs every check, reports once |
 | `install-linters.sh` | — | apt-get → pipx → cpan → upstream binary |
 | `lib.sh` | — | sourced helpers (file selection, missing-tool failure) |
+| `workflow_policy.py` | — | the three repo-policy checks the `ci-*`/`docs-drift` wrappers call |
+| `selftest.sh` | — | negative controls for the gate itself; run before the linters in `lint.yml` |
+| `fixtures/policy/` | — | workflow trees the policy checks must go RED on, one per known bypass |
 
 Rule config lives at the repo root so editors and these scripts agree:
 `.yamllint` (workflow-shaped YAML), `.perlcriticrc` (Test::Nginx-shaped Perl).
@@ -25,6 +31,16 @@ Both carry the reason for every relaxation; read them before adding another.
 Thresholds deliberately match `.github/workflows/security-scanners.yml`. Move
 one there and move it here **in the same commit**, or local-green stops
 predicting remote-green — the only reason this directory exists.
+
+The last three are **repo-policy** checks, not general linters, and that is why
+they are here rather than left to actionlint or zizmor. Those two read a workflow
+against general knowledge — syntax, and a catalogue of known attack shapes. These
+encode facts only this repo knows: which self-hosted labels exist, that the
+runners are persistent and shared with the Debian package builds, which port band
+each job owns, and which file documents the pipeline. Each one goes red when a
+NEW workflow is added without a property every existing workflow happens to have
+— the case where copying an existing file is the only thing between the repo and
+a regression, and nothing enforces the copy.
 
 `clang-tidy` is **CI-only**: it needs `ngx_auto_config.h`, which exists only in
 a configured nginx tree. A hook cannot assume one, and a check that skips
@@ -232,6 +248,26 @@ EOF
 LINT_ONLY=yaml ci/linter/run-all.sh .github/workflows/_probe.yml
 rm .github/workflows/_probe.yml
 
+# CI runner policy: a self-hosted runner on a PR-reachable workflow -> exit 1
+cat > .github/workflows/_probe.yml <<'EOF'
+name: probe
+on:
+  pull_request:
+jobs:
+  p:
+    runs-on: [self-hosted, builder02]
+    steps:
+      - run: python3 ci/tools/test_runtime.py --nginx x --module y
+EOF
+LINT_ONLY=ci-runners  ci/linter/run-all.sh    # -> runs-on is not a trust split
+LINT_ONLY=ci-ports    ci/linter/run-all.sh    # -> starts the driver, no band
+LINT_ONLY=docs-drift  ci/linter/run-all.sh    # -> workflow not in README.md
+rm .github/workflows/_probe.yml
+
+# docs drift, the other direction: a README reference to a workflow that is gone
+printf '\nSee .github/workflows/nosuch.yml\n' >> README.md
+LINT_ONLY=docs-drift ci/linter/run-all.sh ; git checkout README.md
+
 # missing tool -> exit 2, never a silent skip
 printf 'x = 1\n' > _p.py
 PATH="$(echo "$PATH" | tr : '\n' | grep -v "$HOME/.local/bin" | paste -sd:)" \
@@ -269,7 +305,7 @@ Never a blanket disable in a `zizmor.yml`.
 ## In CI
 
 `.github/workflows/lint.yml` runs `install-linters.sh` then
-`LINT_ONLY="nginx sh python perl yaml" run-all.sh` — the same entry point as
+`LINT_ONLY="nginx sh python perl yaml ci-runners ci-ports docs-drift" run-all.sh` — the same entry point as
 the hook, so a clone that never enabled `core.hooksPath` still cannot land a
 regression. It is wired into the `ci.yml` orchestrator and runs on
 `ubuntu-latest`, taking no self-hosted slot.
@@ -280,6 +316,24 @@ why `lint-c.sh` must be edited in the same commit as that workflow.
 
 ## Extending
 
+- New repo-policy check: a subcommand in `workflow_policy.py` plus a thin
+  `lint-<name>.sh` wrapper. Keep the wrapper's `lint_files` pattern as the
+  RELEVANCE test only — every one of these checks compares whole SETS, so a
+  narrowed file list would let a deletion through whenever the counterpart file
+  was the only one staged.
+  **Then add a fixture under `fixtures/policy/` and a `policy_` line in
+  `selftest.sh`.** A policy check whose red path is never exercised is
+  indistinguishable from one that cannot go red — all three of these shipped
+  bypassable by valid YAML (a `.yaml` extension, an inline `on: [pull_request]`,
+  a comment after a job key) and every one of them reported clean while doing it.
+  Point a check at a fixture tree with `WORKFLOW_POLICY_ROOT=<dir>`.
+- **Parse workflows with PyYAML, never with a regex over the file text.** The
+  three checks here were originally regex-based, and the file argued in a
+  docstring that a YAML parse would add a dependency that might be missing.
+  Both halves were wrong: yamllint already makes PyYAML a hard dependency of
+  the same gate, and every regex was walked past by valid YAML that GitHub
+  reads exactly as the shape the regex expected. `workflow_policy.py` now exits
+  2 when PyYAML is absent rather than degrading.
 - New file type: drop a `ci/linter/lint-<name>.sh` in place — `run-all.sh`
   picks it up by glob. Keep "no files of this kind" exiting 0, and fail with
   exit 2 (via `need`) when the tool is absent.

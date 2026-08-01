@@ -46,12 +46,22 @@ jobs:
 
       - name: Validate scripts and source
         run: |
-          bash -n ci/tools/ci-build.sh
-          bash -n ci/tools/soak.sh
-          bash -n ci/tools/bump-versions.sh
-          bash -n ci/tools/rename-module.sh
-          shellcheck ci/tools/ci-build.sh ci/tools/soak.sh \
-            ci/tools/bump-versions.sh ci/tools/rename-module.sh ci/fuzz/build.sh
+          for s in ci/tools/*.sh ci/fuzz/build.sh ci/tests/unit/run.sh \
+                   ci/linter/*.sh .githooks/pre-commit; do
+            bash -n "$s"
+          done
+          # -S warning, matching ci/linter/lint-sh.sh exactly. The two
+          # thresholds must agree or local-green stops predicting remote-green,
+          # which is the only reason ci/linter/ exists. At the default severity
+          # this step also fails on style/info findings the local gate passes
+          # (SC2015, SC2001), so widening the file list without matching the
+          # severity turns a green tree red for findings nothing else gates on.
+          #
+          # -x + --source-path so `. lib.sh` resolves; without them shellcheck
+          # reports SC1091 on every linter and misses what lib.sh defines.
+          shellcheck -S warning -x --source-path=ci/linter \
+            ci/tools/*.sh ci/fuzz/build.sh ci/tests/unit/run.sh \
+            ci/linter/*.sh .githooks/pre-commit
           cppcheck \
             --enable=warning,performance,portability \
             --error-exitcode=1 \
@@ -60,7 +70,7 @@ jobs:
             --suppress=unusedFunction \
             --suppress=unusedStructMember \
             -I src \
-            src/
+            src/ ci/tests/unit/
           # Catches whitespace errors and conflict markers that survived a merge.
           git diff --check
 
@@ -81,8 +91,15 @@ jobs:
           # not reliable across checkout layouts, and without the config every
           # self-hosted runner label ("builder02", "lxc") is flagged as unknown --
           # which is how this lint step becomes noise everyone ignores.
+          # Both extensions: GitHub runs *.yaml workflows too, and a glob of
+          # *.yml alone left one unlinted -- the same blind spot the policy
+          # linters had. nullglob so an absent extension expands to nothing
+          # rather than handing actionlint a literal unmatched pattern.
+          shopt -s nullglob
+          files=(.github/workflows/*.yml .github/workflows/*.yaml)
+          [ "${#files[@]}" -gt 0 ] || { echo "no workflows found" >&2; exit 1; }
           /tmp/actionlint -color -config-file .github/actionlint.yaml \
-            .github/workflows/*.yml
+            "${files[@]}"
 
   build:
     name: Build
@@ -223,10 +240,30 @@ jobs:
             done
           )
 
+      # The scan core's boundary cases, with no nginx process and no network.
+      # Placed in THIS job because the tree it needs is already built here --
+      # a separate job would rebuild it for ~2s of tests and take a sixth
+      # self-hosted slot the ci.yml lane map does not have spare.
+      #
+      # `module` mode is what this job's tree is NOT (it builds debug), so the
+      # mode is passed explicitly rather than left to the locator's default.
+      - name: Unit tests (scan core)
+        env:
+          NGINX_BUILD_MODE: debug
+        run: bash ci/tests/unit/run.sh
+
   test-nginx:
     name: Test::Nginx
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
     timeout-minutes: 20
+    env:
+      # This job's OWN 64-wide port band. builder02 runs six ephemeral slots and
+      # this workflow does not serialise against asan.yml, so two runtime suites
+      # can start at the same instant; a shared default port makes the later
+      # one's listener collide with the earlier one's server, and CI reports two
+      # unrelated-looking failures. ci/linter/lint-ci-ports.sh fails the build
+      # if a job starts the runtime driver without declaring a distinct band.
+      TEST_BASE_PORT: '19200'
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -271,8 +308,40 @@ jobs:
           # failures. That is a harness artifact, not a real red -- do not "fix" it
           # by editing tests. Export this locally too when reproducing.
           TEST_NGINX_TIMEOUT: "20"
+          # Without this, Test::Nginx falls back to its hardcoded 1984. Six CI
+          # slots share builder02, so two jobs on that default bind the same
+          # port: one dies with "Address already in use", or one suite talks to
+          # the other job's server and reports on the wrong binary. This job's
+          # band is unique and the suites within it run in sequence.
+          TEST_NGINX_PORT: ${{ env.TEST_BASE_PORT }}
           TEST_NGINX_SERVROOT: ${{ github.workspace }}/ci/t/servroot
         run: prove -v ci/t/
+
+      # Fails BEFORE the fixture starts if the band reaches the kernel ephemeral
+      # range or is already occupied by a leftover server -- either of which
+      # would otherwise surface as a timeout with no cause attached.
+      - name: Verify this job's port band is free
+        run: bash ci/tools/max-port.sh "$TEST_BASE_PORT"
+
+      # The cases Test::Nginx cannot express: concurrency, the chunk seam driven
+      # through the real body handler, and reload under load. Wrapped in the
+      # hang guard so an event-loop wedge leaves a backtrace instead of a bare
+      # "cancelled" -- these are exactly the cases that hang rather than fail.
+      - name: Runtime suite
+        run: |
+          bash ci/tools/ci-hang-guard.sh 300 "$RUNNER_TEMP/hang" -- \
+            python3 ci/tools/test_runtime.py \
+              --nginx ".build/nginx-${NGINX_VERSION}-debug/objs/nginx" \
+              --module ".build/nginx-${NGINX_VERSION}-debug/objs/ngx_http_skel_module.so" \
+              --port "$TEST_BASE_PORT"
+
+      - name: Upload hang evidence
+        if: failure()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: runtime-hang-evidence
+          path: ${{ runner.temp }}/hang
+          if-no-files-found: ignore
 
   # Guards the two rename-script traps that shipped silently in the past:
   # (1) a fresh `rm -rf .git && git init` makes `git ls-files` succeed with

@@ -32,9 +32,9 @@ belongs in that module's own fork, not here.
 
 ## How CI works here
 
-Every push and every PR runs six short gates (one, A/UBSan, is path-gated to
-code changes). They exist to catch the classes of bugs that C code in a web
-server cannot afford:
+Every PR runs a laned suite of short gates through one entry point,
+`ci.yml` (one member, A/UBSan, is path-gated to code changes). They exist to
+catch the classes of bugs that C code in a web server cannot afford:
 
 - **Build & Test** (`build-test.yml`) — shellcheck/cppcheck/actionlint,
   builds the module against current nginx, asserts the `.so` actually
@@ -48,6 +48,16 @@ server cannot afford:
   soak against a static `--add-module` build (path-gated to `src/` and the
   build/soak harness, so docs-only PRs skip it). Complements Build & Test's
   ASan run of the test suite: this one drives sustained concurrent traffic.
+- **Unit tests** (`ci/tests/unit/`, inside Build & Test) — the scan core's
+  boundary VALUES with no nginx and no network: the truncation cap, a rule
+  split across a piece seam, an open percent-escape held at end of stream.
+  Under a second, and the only layer that can address a buffer boundary
+  directly.
+- **Runtime suite** (`ci/tools/test_runtime.py`, inside Build & Test) — a live
+  server driven from outside Test::Nginx: 64 concurrent marker requests, the
+  marker split across HTTP chunk boundaries at every interior byte, and SIGHUP
+  reload while requests are in flight. Wrapped in `ci/tools/ci-hang-guard.sh`,
+  so a wedge uploads a backtrace instead of a bare "cancelled".
 - **Security scanners** (`security-scanners.yml`) — flawfinder, clang-tidy
   (`cert-*`, `clang-analyzer-security.*`) and semgrep over the module
   sources. Static analysis: it reads the code without running it and
@@ -113,6 +123,23 @@ it. Not a follow-up PR. Not "later". Same PR.
   same commit. A rule with no negative is one nobody has proved is safe to
   ship.
 - New input parser → a libFuzzer target in `ci/fuzz/`.
+- New boundary constant, cap or seam → a case in `ci/tests/unit/test_scan.c`
+  asserting the value on BOTH sides of it. One side alone also passes on an
+  implementation that does nothing.
+- New behaviour that only appears under concurrency, across chunk boundaries,
+  or across a reload → a case in `ci/tools/test_runtime.py`. Test::Nginx cannot
+  express any of the three.
+
+**Every test states the mutation it was seen failing against.** Break the code
+it claims to guard, confirm it goes red, restore, and record the mutation in a
+comment (`ci/tests/unit/run.sh`'s header is the model — including the two
+mutations that SURVIVE and why, because an honest limit written down beats a
+claim nobody checked). A test that has never failed is not known to be a test.
+
+Coverage is reported by `ci/tools/coverage.sh` in `ci-deep.yml` and is
+deliberately **not** a gate: the cheapest way to move a percentage is to write
+tests that touch lines and assert nothing, which is the opposite of the rule
+above.
 
 Look at the existing tests in `ci/t/` and put yours next to them. A PR that
 adds code without a test will not be merged, and yes, we check.

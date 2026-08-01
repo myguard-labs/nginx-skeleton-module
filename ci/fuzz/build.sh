@@ -25,37 +25,15 @@ if [ "${1:-}" = "clean" ]; then
 fi
 
 # --- Locate the nginx source headers. --------------------------------------
-# ci-build.sh keeps ONE TREE PER MODE (.build/nginx-<ver>-<mode>), because
-# debug and asan objects are not interchangeable. The fuzz target only needs
-# HEADERS (ngx_auto_config.h) plus ngx_string.c, which are mode-independent --
-# so any tree will do, but the glob must not mistake the "-<mode>" suffix for
-# part of the version. NGINX_BUILD_MODE picks one explicitly.
-NGINX_BUILD_MODE="${NGINX_BUILD_MODE:-debug}"
-
-if [ -z "${NGINX_VERSION:-}" ]; then
-    for d in "$REPO_ROOT"/.build/nginx-*-"$NGINX_BUILD_MODE"/; do
-        [ -d "$d" ] || continue
-        v=${d%/}; v=${v##*/nginx-}; v=${v%-"$NGINX_BUILD_MODE"}
-        case "$v" in *.tar*) continue;; esac
-        NGINX_VERSION=$v   # last glob match wins; a single tree in practice
-    done
-fi
-if [ -z "${NGINX_VERSION:-}" ]; then
-    echo "ERROR: could not determine NGINX_VERSION; run tools/ci-build.sh first" >&2
-    exit 1
-fi
-
-NGX_SRC="$REPO_ROOT/.build/nginx-${NGINX_VERSION}-${NGINX_BUILD_MODE}"
-if [ ! -d "$NGX_SRC/src/core" ]; then
-    echo "ERROR: nginx source not found at $NGX_SRC" >&2
-    echo "       Run: bash tools/ci-build.sh nginx $NGINX_VERSION" >&2
-    exit 1
-fi
-if [ ! -d "$NGX_SRC/objs" ]; then
-    echo "ERROR: nginx not configured ($NGX_SRC/objs missing); that dir holds" >&2
-    echo "       ngx_auto_config.h. Run tools/ci-build.sh first." >&2
-    exit 1
-fi
+# ci/tools/nginx-tree.sh owns this: ci-build.sh keeps ONE TREE PER MODE
+# (.build/nginx-<ver>-<mode>), and a naive glob reads the "-<mode>" suffix as
+# part of the version. Three consumers need that parsing now (this file,
+# ci/tests/unit/run.sh, ci/tools/coverage.sh), so it lives in one place.
+#
+# The fuzz targets need HEADERS (ngx_auto_config.h) plus src/core/ngx_string.c,
+# which are mode-independent -- so any configured tree will do, and
+# NGINX_BUILD_MODE picks one explicitly.
+NGX_SRC="$(sh "$REPO_ROOT/ci/tools/nginx-tree.sh" "${NGINX_BUILD_MODE:-debug}")"
 
 echo "Using nginx source: $NGX_SRC"
 echo "Building into: $BIN_DIR"

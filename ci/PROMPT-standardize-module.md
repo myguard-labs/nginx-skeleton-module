@@ -74,9 +74,11 @@ Target layout, matching the reference exactly:
 ```text
 ci/
   t/                     Test::Nginx suite            (was t/ or tests/)
+  tests/unit/            C unit tests of the decision core (was unit/ or tests/)
   fuzz/                  libFuzzer targets, dict, corpus/, regressions/
   vendor/nginx-tests/    upstream suite submodule
-  tools/                 ci-build.sh, soak.sh, valgrind.supp, helpers
+  tools/                 ci-build.sh, nginx-tree.sh, test_runtime.py,
+                         coverage.sh, max-port.sh, ci-hang-guard.sh, soak.sh
   linter/                local lint gate (Phase 6)
 ```
 
@@ -105,7 +107,7 @@ Rules:
 
 ## Phase 2 — workflows and badges
 
-Bring the target to the reference's **nine** workflows. Do not copy blindly:
+Bring the target to the reference's **twelve** workflows. Do not copy blindly:
 each one carries reference-specific paths and pins that must be re-derived for
 the target.
 
@@ -121,6 +123,8 @@ the target.
 | `codeql.yml` | CodeQL over the **module TU only** |
 | `ci-deep.yml` | monthly: long fuzz, memcheck, helgrind, nginx mainline+stable+angie matrix |
 | `bump.yml` | weekly pin bump + `ci/vendor/nginx-tests` submodule update |
+| `arch-32bit.yml` | weekly: build + unit tests on 32-bit, where `size_t` is 32 bits and a length calculation that cannot overflow on amd64 can |
+| `s390x-endian.yml` | weekly: build + unit tests under qemu-s390x, where `char` is UNSIGNED and byte order is big-endian |
 
 Also port, adapting paths:
 
@@ -146,25 +150,30 @@ file; the CI table and the badge row are in identical order.
 
 ---
 
-## Phase 3 — coverage to the honest maximum
+## Phase 3 — the four test layers, then coverage
 
-No coverage tooling exists in the reference yet. Add it to the target as part
-of this work, and (recommendation) upstream it back to the skeleton afterwards.
+The reference now ships all four. **Reuse them; do not re-derive.**
 
-Wiring:
+- `ci/tests/unit/` — `run.sh` + `test_scan.c`. Links the target's REAL decision
+  TU and nginx's REAL `src/core/ngx_string.c`; no shimmed decoder, ever. A shim
+  makes the layer hermetic and worthless — it would assert that the private copy
+  is self-consistent. Reuses `ci/fuzz/ngx_stubs.c` rather than a second copy.
+- `ci/tools/test_runtime.py` — the live-server cases Test::Nginx cannot express:
+  concurrency, the chunk seam through the real body handler, reload under load.
+  Retarget the config and the marker; keep the shape, including the baseline
+  case that proves the module is loaded and blocking before anything else runs.
+- `ci/tools/coverage.sh` + the `coverage` mode in `ci/tools/ci-build.sh` — a
+  distinct build tree, never a flag bolted onto `debug`, so a cached
+  non-instrumented tree cannot produce a 0% report that reads as a finding.
+  `gcovr` filtered to `src/` only: an unfiltered run drowns the module's numbers
+  in 200k lines of upstream nginx.
 
-- Build the scan core with `--coverage` (`-fprofile-arcs -ftest-coverage`) in a
-  dedicated `coverage` mode in `ci/tools/ci-build.sh` — a new mode, not a flag
-  bolted onto `debug`, so the cache keys stay separable.
-- Report with `gcovr` over `src/` only. Exclude `ci/`, the fuzz harnesses and
-  vendored code — a harness inflating the number is the classic self-deception.
-- Count coverage from BOTH drivers: Test::Nginx (`ci/t/`) and the fuzz targets
-  replaying `ci/fuzz/corpus/` + `regressions/`. The scan core is reachable from
-  both; measuring one hides the other's gaps.
-- Gate at a floor slightly under the achieved number (the reference's sibling
-  repos use "achieved minus a couple of points"), so noise does not flap the
-  gate but a real regression trips it. Raise the floor in the same PR that
-  raises coverage; never lower it to make a red run green.
+**Coverage is a REPORT, not a gate.** Earlier revisions of this document told you
+to enforce a floor "achieved minus a couple of points". That advice is withdrawn:
+the cheapest way to move the number is to write tests that touch lines and assert
+nothing, so a floor buys a metric and sells the thing it was proxying for. Publish
+the report from `ci-deep.yml`; gate on the mutations recorded beside each suite.
+`COVERAGE_FAIL_UNDER` exists for a target that decides otherwise.
 
 **"Without cheating" is the hard part. These are rejected outright:**
 
@@ -187,8 +196,10 @@ failure, malformed/truncated input, boundary values at every `MAX_*` constant,
 cross-buffer seams, and the branches your gcovr report shows as never taken.
 100% is not a goal; every *reachable* branch having a meaningful assertion is.
 
-**Acceptance:** coverage job in CI, floor enforced, report uploaded as an
-artifact, and each added test observed failing against a stated mutation.
+**Acceptance:** all four layers present and running in CI, the coverage report
+uploaded as an artifact, and each added test observed failing against a stated
+mutation that is written down next to it — including any mutation that SURVIVES,
+with the reason. An honest recorded limit is worth more than an unchecked claim.
 
 ---
 
