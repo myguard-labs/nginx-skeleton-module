@@ -19,7 +19,7 @@
 #
 # Runs in well under a second and needs no nginx process, no network and no
 # root -- so it is the layer a derived module can afford to run on every save,
-# and the layer the -m32 / qemu-s390x legs can afford to run under emulation.
+# and the layer the -m32 leg can afford to run under a cross toolchain.
 #
 # WHAT IT DOES *NOT* DO, deliberately: it does not shim nginx. The test binary
 # links the REAL src/core/ngx_string.c out of the build tree, which is why a
@@ -101,7 +101,7 @@ NGX_INCS=(
     -I"$NGX_SRC/src/http/modules"
 )
 
-# Our code: the full warning wall. A 32-bit or big-endian leg that only passes
+# Our code: the full warning wall. A 32-bit leg that only passes
 # with these loosened would be hiding the exact class of defect it exists for.
 OWN_CFLAGS=(-g -O1 -Wall -Wextra -Wshadow -Wstrict-prototypes -Werror)
 # Upstream code: warnings visible, not fatal (see the header).

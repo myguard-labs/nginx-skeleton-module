@@ -29,11 +29,18 @@
  * ever actually reaches one.
  *
  * PORTABILITY: this binary is also built and RUN under -m32
- * (.github/workflows/arch-32bit.yml) and under qemu-s390x, big-endian with
- * unsigned char (.github/workflows/s390x-endian.yml). Keep every case free of
- * host assumptions: no sizeof-dependent expected values, no signed-char
+ * (.github/workflows/arch-32bit.yml). Keep every case free of host
+ * assumptions: no sizeof-dependent expected values, no signed-char
  * comparisons, no pointer-width arithmetic in an expectation. A case that can
- * only pass on amd64 turns those two legs into noise.
+ * only pass on amd64 turns that leg into noise.
+ *
+ * NOT COVERED by any CI leg: big-endian byte order and unsigned `char`. A
+ * qemu-s390x leg used to claim this and never once reached the module's own
+ * code -- builder02's runner slots cannot emulate s390x -- so it was removed
+ * rather than left green-by-accident (2026-08-01, see memory issues.md). The
+ * signed-char discipline above is therefore a convention here, not a tested
+ * guarantee: a derived module that classifies high-bit bytes, or that parses a
+ * length prefix off the wire, needs its own big-endian leg.
  *
  * Extend: add a CASE() function and one line in main(). Keep each case
  * asserting a value the CORRECT implementation produces and a BROKEN one does

@@ -19,8 +19,11 @@ name: arch-32bit
 # on every run, which is minutes of apt against a PR gate whose other checks
 # cost seconds -- and a width bug is not introduced by a typical diff any faster
 # than a weekly cadence catches it. Scheduled at an off-hour minute, staggered
-# against s390x-endian.yml (Tuesday 05:43) and codeql.yml so the scheduled
-# workflows do not queue at the same instant.
+# against codeql.yml so the scheduled workflows do not queue at the same
+# instant. (The Tuesday 05:43 slot next to it was s390x-endian.yml, removed
+# 2026-08-01 -- builder02's runner slots cannot emulate s390x, so that leg
+# never reached the module's own code. Reuse the slot if a new weekly leg
+# needs one.)
 #
 # Action pins are repeated in every workflow in this repo -- keep them in sync:
 # actions/checkout@v5 -> 93cb6efe18208431cddfb8368fd83d5badbf9bfd
