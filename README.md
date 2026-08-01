@@ -70,7 +70,8 @@ ci/                        everything that only exists to test/build the module
     workflow_policy.py     repo-policy checks over .github/workflows/
     selftest.sh            negative controls for the gate itself
     fixtures/policy/       trees the policy checks must go RED on
-  PROMPT-standardize-module.md  prompt: bring an existing module to this standard
+  PROMPT-standardize-module.md  prompt: first-time bring-up of an existing
+                                module (see also: syncing, below)
 .githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
 .github/workflows/         the CI workflows, see below
 ```
@@ -273,6 +274,60 @@ vacuously.
 **Never suppress a valgrind stack through your own code.** `ci/tools/valgrind.supp`
 is nginx-core noise only. A suppression over module frames turns the gate green
 permanently.
+
+## Syncing skeleton changes into a derived module
+
+A module is cloned once and then drifts. This is the recurring half of that
+relationship — the *first* bring-up of an existing module is a different, much
+larger job and has its own document:
+**[ci/PROMPT-standardize-module.md](ci/PROMPT-standardize-module.md)**.
+
+Use that prompt when the target has never been standardised (no `ci/` layout, no
+`ci.yml` orchestrator, no `ci/linter/`). Use the list below when the target is
+already on the standard and you are forwarding a specific improvement.
+
+**Per module, one session, one repo:**
+
+- **Establish the anchor.** Whatever the target last took from here — a
+  `CHANGES` entry, a `vN` tag, or the merge commit of its standardisation PR.
+  Without an anchor you are guessing at scope. `git log --oneline <anchor>..HEAD`
+  in this repo is the candidate set; [CHANGES](CHANGES) says what each one was
+  *for*.
+- **Select, don't sweep.** Take one concern per PR. A sync PR carrying four
+  unrelated skeleton commits is not independently revertible and its CI failure
+  does not tell you which change broke it.
+- **Re-derive, never copy blind.** Every workflow here carries skeleton-specific
+  paths, file names, runner labels and version pins. A file copied verbatim
+  compiles, runs, and gates the wrong thing. The reference for what each gate
+  must *prove* is the Phase 2 table in the prompt.
+- **Check the four drift classes first** — none is visible from a green run,
+  each has bitten a module here:
+  - `prove` invoked with no `TEST_NGINX_PORT`. Test::Nginx's default 1984 is
+    unarbitrated and `builder02` runs six slots against one network — the
+    collision reads as a module regression (`bind() … Address already in use`).
+  - `--gcov-object-directory` in `ci/tools/coverage.sh` fails argparse on
+    gcovr < 7.0. Only matters where gcovr is unpinned and the runner is not
+    controlled — the fork arm's `ubuntu-latest`.
+  - a `.github/versions.env` consumer that sources the file without validating
+    it executes any line that is not a pin.
+  - `ci/linter/workflow_policy.py` older than the YAML-parse rewrite matches
+    workflow YAML with regexes, and valid YAML (`.yaml` extension, inline
+    `on: [pull_request]`, a comment after a job key) makes all three policy
+    checks silently vacuous.
+
+  The last two only exist in a module that already took those files; the first
+  two apply to any module that runs `prove` or reports coverage.
+- **Verify the gate red.** A gate you moved but never saw fail is a gate you did
+  not verify. State the probe in the PR body.
+- **Remote CI green before merge**, then squash, delete the branch, and bump the
+  superrepo gitlink for that checkout.
+- **Send improvements back.** A fix or a layer the target grew that this repo
+  lacks gets a PR *here*. The template is only worth keeping if it stays ahead
+  of its clones.
+
+Record the anchor you synced to in the target's memory mirror
+(`/opt/myguard/memory/labs/<module-name>/index.md`), or the next session
+re-derives it from scratch.
 
 ## Requirements
 
