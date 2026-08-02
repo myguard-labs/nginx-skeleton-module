@@ -21,6 +21,12 @@ ci/tests/unit/*.o
 ci/tests/unit/*.gcda
 ci/tests/unit/*.gcno
 
+# Compilation database, written by `bear -- ci/tools/ci-build.sh` in the
+# security-scanners job so clang-tidy replays the build's real flags. Derived
+# output, and it records absolute paths from the machine that built it -- a
+# committed copy would send clang-tidy at someone else's directories.
+compile_commands.json
+
 # Python bytecode cache. ci/linter/workflow_policy.py is imported by its
 # wrappers, so running the lint gate creates this; it is derived output, it is
 # CPython-version-specific, and it carries an embedded source timestamp.
