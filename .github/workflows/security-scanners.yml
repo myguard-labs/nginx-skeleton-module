@@ -61,7 +61,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            flawfinder clang-tidy python3 python3-pip pipx curl \
+            flawfinder clang-tidy bear python3 python3-pip pipx curl \
             build-essential libpcre2-dev zlib1g-dev
           # semgrep via pipx: PEP 668 blocks a bare `pip3 install` into the
           # system Python on the Ubuntu 24.04 self-hosted runner.
@@ -87,8 +87,46 @@ jobs:
           mode: module
           nginx-version: ${{ env.NGINX_VERSION }}
 
-      - name: Generate nginx build headers (for clang-tidy)
-        run: bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" module
+      # NO_CACHE=1 is load-bearing, not belt-and-braces. bear records compiler
+      # invocations as they happen, so it can only capture a compile that
+      # actually runs: against a warm build tree `make modules` reports
+      # "Nothing to be done" and bear writes a VALID, EMPTY [] database.
+      # clang-tidy -p then finds no entry for any file, analyzes nothing, and
+      # exits 0 -- a green gate that checked zero lines. Measured: warm tree ->
+      # 0 entries, cold tree -> 3. The db-size assertion below is the backstop;
+      # this flag is what makes it hold.
+      - name: Build module, capturing the real compile flags (bear)
+        env:
+          NO_CACHE: 1
+        run: bear --output compile_commands.json -- bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" module
+
+      # A compilation database that silently loses its entries turns every
+      # downstream check into a no-op, so assert the shape before trusting it:
+      # one entry per src/*.c, each pointing at a file that exists.
+      - name: Verify the compilation database covers src/
+        env:
+          # Read from the environment, never interpolated into the script body:
+          # a `${{ }}` expansion is textual substitution into the source about
+          # to run, so anything attacker-controllable becomes code. $GITHUB_WORKSPACE
+          # is benign, but the habit is what zizmor's template-injection audit
+          # enforces, and an exception here is one copy-paste from a real one.
+          WS: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+          ws = pathlib.Path(os.environ["WS"])
+          want = {p.resolve() for p in (ws / "src").glob("*.c")}
+          db = json.loads((ws / "compile_commands.json").read_text())
+          got = {pathlib.Path(e["file"]).resolve() for e in db}
+          missing = want - got
+          if not want:
+              sys.exit("no src/*.c found -- wrong working directory?")
+          if missing:
+              sys.exit("compile_commands.json missing: "
+                       + ", ".join(sorted(p.name for p in missing)))
+          print(f"compilation database: {len(db)} entries, all of src/*.c covered")
+          PY
 
       - name: flawfinder (gate on >=4)
         run: |
@@ -104,21 +142,28 @@ jobs:
       - name: clang-tidy (cert-*, security.*)
         run: |
           set -euo pipefail
-          N="$GITHUB_WORKSPACE/.build/nginx-${NGINX_VERSION}-module"
-          INCLUDES="-I$N/src/core -I$N/src/event -I$N/src/event/modules \
-            -I$N/src/os/unix -I$N/objs -I$N/src/http -I$N/src/http/modules \
-            -I$N/src/http/v2 -I$GITHUB_WORKSPACE/src -I/usr/include"
+          # -p <dir> reads compile_commands.json: clang-tidy replays the exact
+          # argv gcc got, so it parses the same preprocessor branches the build
+          # compiled. The include list this replaced was a hand-kept second copy
+          # of configure's output and had already drifted BOTH ways -- it was
+          # missing src/event/quic, and carried src/http/v2 and /usr/include
+          # that the real build never passes. A wrong -I is not a loud failure
+          # here: clang-tidy keeps going and analyzes a different translation
+          # unit than the one that ships. Nothing to maintain now; the flags
+          # follow ci-build.sh automatically.
+          #
+          # The database records paths relative to the build tree, so run from
+          # that directory -- clang-tidy resolves each entry against its own
+          # "directory" field, but -p must point at the file itself.
           status=0
           for src in "$GITHUB_WORKSPACE"/src/*.c; do
             echo "--- clang-tidy: $(basename "$src") ---"
             # DeprecatedOrUnsafeBufferHandling is disabled: it flags every
             # memcpy/sprintf in existence, including nginx's own idioms, and
             # would make the check unusable rather than safer.
-            # shellcheck disable=SC2086
-            clang-tidy "$src" \
+            clang-tidy "$src" -p "$GITHUB_WORKSPACE" \
               --checks='-*,cert-*,clang-analyzer-security.*,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling' \
-              --warnings-as-errors='*' \
-              -- $INCLUDES 2>&1 | tee -a clang-tidy.log || status=1
+              --warnings-as-errors='*' 2>&1 | tee -a clang-tidy.log || status=1
           done
           exit "$status"
 
