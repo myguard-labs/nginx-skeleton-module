@@ -1,7 +1,8 @@
 name: Bump versions
 
 # Weekly: check nginx.org/angie.software for newer releases than what's
-# pinned, and pull the vendored nginx-tests submodule to its upstream HEAD.
+# pinned, move every GitHub Action sha pin and pinned linter version to its
+# newest release, and pull the vendored nginx-tests submodule to upstream HEAD.
 # ci/tools/bump-versions.sh does the actual work (also runnable locally with
 # --dry-run to preview).
 # Opens a PR rather than pushing straight to main -- main carries a
@@ -31,7 +32,7 @@ permissions:
 
 jobs:
   bump:
-    name: Bump nginx/angie/nginx-tests pins
+    name: Bump nginx/angie/action/linter pins
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
     timeout-minutes: 15
     steps:
@@ -45,8 +46,11 @@ jobs:
       - name: Run bump script
         id: bump
         env:
-          # The angie release lookup hits api.github.com; unauthenticated the
-          # shared runner IP is rate-limited to 403s.
+          # The angie release lookup and every action-pin lookup hit
+          # api.github.com; unauthenticated, the shared runner IP is
+          # rate-limited to 403s. bump-actions.sh treats a failed lookup as
+          # fatal rather than "nothing to bump", so a missing/expired token
+          # fails this step instead of quietly leaving the pins to rot.
           GH_TOKEN: ${{ secrets.BUMP_PR_TOKEN }}
         run: bash ci/tools/bump-versions.sh
 
@@ -65,7 +69,7 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git checkout -b "$branch"
           git add -A
-          git commit -m "chore: bump nginx/angie/nginx-tests pins
+          git commit -m "chore: bump nginx/angie/action/linter pins
 
           Automated weekly version check (ci/tools/bump-versions.sh)."
           # persist-credentials is false, so the checkout leaves no git
@@ -96,7 +100,7 @@ jobs:
             exit 0
           fi
           gh pr create \
-            --title "chore: bump nginx/angie/nginx-tests pins ($(date -u +%Y-%m-%d))" \
+            --title "chore: bump nginx/angie/action/linter pins ($(date -u +%Y-%m-%d))" \
             --body "Automated weekly version check (ci/tools/bump-versions.sh). Review the diff and let required CI checks gate the merge." \
             --base main \
             --head "$branch"
