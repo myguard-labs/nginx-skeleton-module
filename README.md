@@ -71,7 +71,9 @@ ci/                        everything that only exists to test/build the module
     selftest.sh            negative controls for the gate itself
     fixtures/policy/       trees the policy checks must go RED on
   PROMPT-standardize-module.md  prompt: first-time bring-up of an existing
-                                module (see also: syncing, below)
+                                module (eight phases, eight PRs)
+  PROMPT-sync-module.md         prompt: forward ONE skeleton change into an
+                                already-standardised module
 .githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
 .github/workflows/         the CI workflows, see below
 ```
@@ -277,16 +279,21 @@ permanently.
 
 ## Syncing skeleton changes into a derived module
 
-A module is cloned once and then drifts. This is the recurring half of that
-relationship — the *first* bring-up of an existing module is a different, much
-larger job and has its own document:
-**[ci/PROMPT-standardize-module.md](ci/PROMPT-standardize-module.md)**.
+A module is cloned once and then drifts. Forwarding one improvement back into
+it is a recurring job with its own prompt:
+**[ci/PROMPT-sync-module.md](ci/PROMPT-sync-module.md)** — copy it into a fresh
+session, replace `<TARGET>` and `<CHANGE>`, run it. It carries the full
+checklist: anchor resolution, the drift classes with their mechanisms, the
+probe shapes, and what to record afterwards.
 
-Use that prompt when the target has never been standardised (no `ci/` layout, no
-`ci.yml` orchestrator, no `ci/linter/`). Use the list below when the target is
-already on the standard and you are forwarding a specific improvement.
+The *first* bring-up of a module that has never been standardised is a
+different, much larger job — eight phases, eight PRs — and has its own document:
+**[ci/PROMPT-standardize-module.md](ci/PROMPT-standardize-module.md)**. Tell
+which you need by whether the target has a `ci/` layout, `ci.yml` as its sole
+`pull_request` entry point, and `ci/linter/`.
 
-**Per module, one session, one repo:**
+The rest of this section is the human-facing summary of the sync prompt. One
+module, one session, one repo:
 
 - **Establish the anchor.** Whatever the target last took from here — a
   `CHANGES` entry, a `vN` tag, or the merge commit of its standardisation PR.

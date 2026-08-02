@@ -15,9 +15,8 @@ It is eight phases, eight PRs, and one fresh session per module.
 
 If the target is **already** on this standard and you are forwarding one later
 skeleton improvement into it, this document is the wrong size for the job. Use
-the sync checklist in the reference's README instead — *Syncing skeleton changes
-into a derived module* — and come back here only for a phase the target never
-took at all.
+[PROMPT-sync-module.md](PROMPT-sync-module.md) instead, and come back here only
+for a phase the target never took at all.
 
 Tell which you are looking at: a standardised target has a `ci/` layout, a
 `ci.yml` orchestrator as its sole `pull_request` entry point, and `ci/linter/`.
