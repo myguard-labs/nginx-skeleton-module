@@ -174,6 +174,24 @@ jobs:
             # DeprecatedOrUnsafeBufferHandling is disabled: it flags every
             # memcpy/sprintf in existence, including nginx's own idioms, and
             # would make the check unusable rather than safer.
+            #
+            # --warnings-as-errors='*' is NOT as wide as it looks, and narrowing
+            # it to the names in --checks would be a no-op. The leading `-*`
+            # disables clang-diagnostic-* along with everything else, so the
+            # compiler warnings the replayed argv carries -- including the
+            # `-Werror` the real build passes -- are never raised as clang-tidy
+            # findings, and `*` has nothing to promote beyond cert-* and
+            # clang-analyzer-security.*. Measured on clang-tidy 19.1.7,
+            # 2026-08-02: a `-Wunused-but-set-variable` in a -Werror translation
+            # unit is an ERROR under --checks='clang-diagnostic-*' and exits 1,
+            # and is not reported at all under the flags below (exit 0, byte-
+            # identical output with `*` and with the scoped list). -header-filter
+            # defaults to suppressing header diagnostics on top of that.
+            #
+            # So an nginx bump introducing a clang-only diagnostic in upstream
+            # headers cannot redden this gate. What WOULD break the property is
+            # adding clang-diagnostic-* to --checks; if that ever happens, scope
+            # this flag in the same commit.
             clang-tidy "$src" -p "$GITHUB_WORKSPACE" \
               --checks='-*,cert-*,clang-analyzer-security.*,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling' \
               --warnings-as-errors='*' 2>&1 | tee -a clang-tidy.log || status=1
