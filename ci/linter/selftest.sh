@@ -112,6 +112,17 @@ policy_ 1 bypass-commented-job-key ports
 # build-test.yml sat in exactly this shape until 2026-08-02.
 policy_ 1 verify-after-bind ports
 
+# A mistyped pool label in a schedule-only workflow. The trust half of the
+# runners check does not apply to a workflow no fork can reach, and skipping it
+# used to skip the LABEL membership test with it -- while actionlint, the only
+# other thing that reads runner labels, stays silent on the `fromJSON(...)`
+# selectors this repo uses everywhere. Six selectors in bump.yml and ci-deep.yml
+# had no label checking at all. These two run as a PAIR: the -ok fixture is the
+# same file spelled correctly, and without it the red below is equally
+# consistent with "every non-PR-reachable workflow is now flagged".
+policy_ 1 schedule-only-runner-labels runners
+policy_ 0 schedule-only-runner-labels-ok runners
+
 # WIRING CONTROLS. These assert that a checker is reachable at all, which is a
 # weaker claim than "it goes red on a defect" -- the red-direction probes need
 # real tools and live in each checker's header instead, so this file keeps its
