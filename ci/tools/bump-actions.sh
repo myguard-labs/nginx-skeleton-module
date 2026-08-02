@@ -150,9 +150,16 @@ if [ "$DRY_RUN" = 0 ] && [ "$CHANGED" = 1 ]; then
         # The comment spells the action the way `uses:` does -- owner/repo, and
         # for codeql-action a subpath too ("github/codeql-action/init@v4 -> ...").
         # Matching on the bare repo name silently updates nothing.
-        grep -rlE "# ${repo}(/[A-Za-z0-9._-]+)?@v?[0-9]+ +-> +[0-9a-f]{40}" .github/ 2>/dev/null \
+        #
+        # The tag pattern must accept a FULL tag, not a bare major. The
+        # replacement writes the resolved tag (v4.37.4), so a `@v?[0-9]+`
+        # selector matches the file once and never again: the next bump moves
+        # the `uses:` line (anchored on the sha) while the comment stays frozen
+        # at the previous week's tag and sha. Verified by running two bumps
+        # against a copy -- second pass selected zero files.
+        grep -rlE "# ${repo}(/[A-Za-z0-9._-]+)?@v?[0-9][0-9A-Za-z._-]* +-> +[0-9a-f]{40}" .github/ 2>/dev/null \
         | while IFS= read -r f; do
-            perl -pi -e "s{(# \Q$repo\E(?:/[A-Za-z0-9._-]+)?\@)v?[0-9]+( +-> +)[0-9a-f]{40}}{\${1}$t\${2}$s}g" "$f"
+            perl -pi -e "s{(# \Q$repo\E(?:/[A-Za-z0-9._-]+)?\@)v?[0-9][0-9A-Za-z._-]*( +-> +)[0-9a-f]{40}}{\${1}$t\${2}$s}g" "$f"
         done
     done
 fi

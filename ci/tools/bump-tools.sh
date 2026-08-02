@@ -9,7 +9,7 @@
 #
 # WHY THIS IS NOT A ONE-LINE sed
 #
-# `semgrep==1.169.0` appears in three files that must agree: the CI gate
+# The semgrep pin appears in three files that must agree: the CI gate
 # (.github/workflows/security-scanners.yml), the local installer
 # (ci/linter/install-linters.sh) and the error message that tells you how to
 # install it (ci/linter/lint-c.sh). They are pinned to the same version ON
@@ -103,8 +103,16 @@ for entry in "${TOOLS[@]}"; do
     # The sync IS the feature -- assert it rather than assume the loop above
     # covered every copy. A pin that reappears somewhere unlisted must fail the
     # bump, not ship a split-brain version.
+    #
+    # ci/tools/bump-{tools,actions,versions}.sh are excluded because they are
+    # ABOUT pins: any version literal in them is prose in a comment, not a pin
+    # to keep in step. Without this the check matched its own documentation and
+    # aborted the first real bump halfway through the rewrite -- and --dry-run
+    # never reproduced it, because the assertion only runs on the write path.
     stray="$(grep -rhoE "${pkg}==[0-9]+(\.[0-9]+)*" \
                 --include='*.yml' --include='*.yaml' --include='*.sh' \
+                --exclude='bump-tools.sh' --exclude='bump-actions.sh' \
+                --exclude='bump-versions.sh' \
                 .github ci 2>/dev/null | sort -u | grep -v "^${pkg}==${new}$" || true)"
     if [ -n "$stray" ]; then
         echo "FATAL: ${pkg} pins disagree after bump:" >&2
