@@ -14,7 +14,7 @@ finding shellcheck could have named in two seconds. Every script is standalone;
 | `lint-python.sh` | `*.py` | `ruff check` + `ruff format --check` |
 | `lint-perl.sh` | `ci/t/*.t`, `*.pl`, `*.pm` | `perl -c` + perlcritic severity ≥4 |
 | `lint-yaml.sh` | `*.yml`, `*.yaml` | yamllint (errors block, warnings visible), actionlint + zizmor (`--persona=pedantic`) on `.github/workflows/` |
-| `lint-ci-runners.sh` | `.github/workflows/` | fork PRs never select the self-hosted pool; `pull_request_target` forbidden |
+| `lint-ci-runners.sh` | `.github/workflows/` | fork PRs never select the self-hosted pool; `pull_request_target` forbidden; every `runs-on` names labels that exist, including on workflows no pull request can reach |
 | `lint-ci-ports.sh` | `.github/workflows/` | every runtime-bearing job declares a distinct `TEST_BASE_PORT` band, binds it, and verifies it above the FIRST binding step |
 | `lint-docs-drift.sh` | `.github/workflows/`, `README.md` | every workflow documented, every documented workflow exists |
 | `lint-spelling.sh` | all tracked files | codespell over prose, comments and log strings; vendored trees excluded via `lib.sh` |
@@ -266,6 +266,23 @@ EOF
 LINT_ONLY=ci-runners  ci/linter/run-all.sh    # -> runs-on is not a trust split
 LINT_ONLY=ci-ports    ci/linter/run-all.sh    # -> starts the driver, no band
 LINT_ONLY=docs-drift  ci/linter/run-all.sh    # -> workflow not in README.md
+rm .github/workflows/_probe.yml
+
+# Runner LABELS, on a workflow no pull request can reach. Nothing else reads
+# these: actionlint validates labels for a literal `runs-on` only, and every
+# self-hosted selector here is a fromJSON(...) ternary it stays silent on.
+cat > .github/workflows/_probe.yml <<'EOF'
+name: probe
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+jobs:
+  p:
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","buidler02","lxc"]') }}
+    steps:
+      - run: echo probe
+EOF
+LINT_ONLY=ci-runners  ci/linter/run-all.sh    # -> not an approved selector (label typo)
 rm .github/workflows/_probe.yml
 
 # docs drift, the other direction: a README reference to a workflow that is gone

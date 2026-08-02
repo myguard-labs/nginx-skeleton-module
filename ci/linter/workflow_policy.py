@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 """Repo-policy checks over .github/workflows/ that no off-the-shelf linter makes.
 
-    ci/linter/workflow_policy.py runners     runner trust boundary
+    ci/linter/workflow_policy.py runners     runner trust boundary + pool labels
     ci/linter/workflow_policy.py ports       per-job test port bands
     ci/linter/workflow_policy.py docs        README <-> workflows drift
 
@@ -218,12 +218,12 @@ def check_runners() -> int:
         # `pull_request:` trigger would therefore pass every single one of them
         # while checking nothing, which is precisely the vacuous-gate shape this
         # repo keeps re-learning.
-        if not trigger & {"pull_request", "workflow_call"}:
-            continue
+        pr_reachable = bool(trigger & {"pull_request", "workflow_call"})
 
         wf_jobs = jobs(doc)
         if not wf_jobs:
-            errors.append(f"{path.name}: PR-reachable workflow declares no jobs")
+            if pr_reachable:
+                errors.append(f"{path.name}: PR-reachable workflow declares no jobs")
             continue
         for job, node in wf_jobs:
             # A `uses:` job is a call into another workflow, which carries its
@@ -231,16 +231,49 @@ def check_runners() -> int:
             if "uses" in node:
                 continue
             if "runs-on" not in node:
-                errors.append(
-                    f"{path.name}:{job} is PR-reachable and declares no runs-on"
-                )
+                # Only a PR-reachable job OWES a runner declaration here: that is
+                # the trust question. A schedule-only job without one is invalid
+                # to GitHub itself and is not this check's business.
+                if pr_reachable:
+                    errors.append(
+                        f"{path.name}:{job} is PR-reachable and declares no runs-on"
+                    )
                 continue
             runner = selector(node["runs-on"])
             if runner in TRUST_SPLITS or HOSTED.fullmatch(runner):
                 continue
+            if pr_reachable:
+                errors.append(
+                    f"{path.name}:{job} has runs-on: {runner} -- must be "
+                    "GitHub-hosted or an approved fork-aware trust split "
+                    "(see TRUST_SPLITS in ci/linter/workflow_policy.py)"
+                )
+                continue
+            # NOT PR-reachable, so there is no fork-trust question to answer --
+            # but the membership test still runs, because nothing else in the
+            # toolchain checks these labels at all.
+            #
+            # actionlint validates runner labels only for a LITERAL `runs-on`.
+            # Every self-hosted selector in this repo is a `fromJSON(...)`
+            # ternary, so actionlint goes QUIET on all of them regardless of
+            # what .github/actionlint.yaml declares -- and silence reads exactly
+            # like a pass. The exact-string membership test above is what
+            # actually catches a mistyped pool label, so skipping it for
+            # schedule-only workflows left bump.yml and ci-deep.yml (six
+            # selectors) with no label checking anywhere. Measured 2026-08-02:
+            # `builder02` -> `buidler02` in build-test.yml was reported, the
+            # same edit in bump.yml and ci-deep.yml was silent on both this
+            # check and actionlint.
+            #
+            # A typo here does not fail at lint time or at dispatch time. It
+            # fails as a queued job that never picks up a runner, on a weekly
+            # schedule nobody is watching.
             errors.append(
-                f"{path.name}:{job} has runs-on: {runner} -- must be "
-                "GitHub-hosted or an approved fork-aware trust split "
+                f"{path.name}:{job} has runs-on: {runner} -- not an approved "
+                "selector. This workflow is not PR-reachable, so the finding is "
+                "about the LABELS, not fork trust: nothing else validates them "
+                "(actionlint skips non-literal runs-on) and an unknown label is "
+                "a job that never starts "
                 "(see TRUST_SPLITS in ci/linter/workflow_policy.py)"
             )
     return report(

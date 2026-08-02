@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 # ci/linter/lint-ci-runners.sh -- fork PRs must never select the self-hosted
-# runners.
+# runners, and every runner selector must name labels that exist.
 #
 # The rule and the reasoning live in ci/linter/workflow_policy.py (subcommand
 # `runners`); this wrapper exists so run-all.sh picks the check up by glob and
@@ -14,6 +14,13 @@
 # from the PR head, so one workflow missing the fork fallback hands an arbitrary
 # contributor code execution on the build host. This is a public template repo;
 # taking outside contributions is the point.
+#
+# The second half is a LABEL check, and it covers workflows the trust half does
+# not: a schedule-only workflow has no fork to keep off the build host, but a
+# typo in its pool labels is still a job that never starts. actionlint cannot
+# cover that gap -- it validates labels only for a literal `runs-on`, and every
+# self-hosted selector here is a `fromJSON(...)` ternary, on which it stays
+# silent. Silence and a pass are the same output.
 #
 # Usage: ci/linter/lint-ci-runners.sh [files...]   Env: LINT_MODE=staged|all
 # Extend: approved runner selectors are the TRUST_SPLITS set in workflow_policy.py.
