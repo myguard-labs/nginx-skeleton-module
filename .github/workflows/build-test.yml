@@ -89,7 +89,7 @@ jobs:
           tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
           # -config-file explicitly: auto-discovery of .github/actionlint.yaml is
           # not reliable across checkout layouts, and without the config every
-          # self-hosted runner label ("builder02", "lxc") is flagged as unknown --
+          # self-hosted runner label is flagged as unknown --
           # which is how this lint step becomes noise everyone ignores.
           # Both extensions: GitHub runs *.yaml workflows too, and a glob of
           # *.yml alone left one unlinted -- the same blind spot the policy
@@ -257,7 +257,7 @@ jobs:
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
     timeout-minutes: 20
     env:
-      # This job's OWN 64-wide port band. builder02 runs six ephemeral slots and
+      # This job's OWN 64-wide port band. The build host runs six ephemeral slots and
       # this workflow does not serialise against asan.yml, so two runtime suites
       # can start at the same instant; a shared default port makes the later
       # one's listener collide with the earlier one's server, and CI reports two
@@ -302,14 +302,14 @@ jobs:
           TEST_NGINX_BINARY: ${{ github.workspace }}/.build/nginx-${{ env.NGINX_VERSION }}-debug/objs/nginx
           TEST_NGINX_LOAD_MODULES: ${{ github.workspace }}/.build/nginx-${{ env.NGINX_VERSION }}-debug/objs/ngx_http_skel_module.so
           # Test::Nginx::Socket's client read timeout defaults to ~2s. That is far
-          # too tight on the shared builder02 LXC: under normal build-host load a
+          # too tight on a shared self-hosted LXC: under normal build-host load a
           # live request can take >2s to first byte, and a whole file then fails as
           # a contiguous "client socket timed out" sweep with ZERO assertion
           # failures. That is a harness artifact, not a real red -- do not "fix" it
           # by editing tests. Export this locally too when reproducing.
           TEST_NGINX_TIMEOUT: "20"
           # Without this, Test::Nginx falls back to its hardcoded 1984. Six CI
-          # slots share builder02, so two jobs on that default bind the same
+          # slots share one host, so two jobs on that default bind the same
           # port: one dies with "Address already in use", or one suite talks to
           # the other job's server and reports on the wrong binary. This job's
           # band is unique and the suites within it run in sequence.

@@ -5,10 +5,10 @@
 # the lint step is easy to ignore; declaring the labels makes a red actionlint
 # mean something again.
 #
-#   builder02 : the build host (self-hosted runner pool)
+#   builder02 : the build host label (self-hosted runner pool)
 #   lxc       : LXC-container runners -- pure build/CPU work, no Docker daemon
 #   b02lxc    : the b02-runner-0{1,2} subset of `lxc`, for jobs that are
-#               sensitive to runner timing (see nginx-label-autoconf-module)
+#               sensitive to runner timing (seen in a derived module)
 #   docker    : runners with a real Docker daemon, for container-based e2e
 self-hosted-runner:
   labels:

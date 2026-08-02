@@ -163,7 +163,8 @@ Exit codes: `0` clean, `1` findings, `2` a linter is missing.
 
 ### Speed, and why it is shaped this way
 
-Measured 2026-07-31 on builder02 (i9-14900HX, 32 threads) with **no CI job
+Measured 2026-07-31 on the self-hosted build host (i9-14900HX, 32 threads)
+with **no CI job
 running** — see the caveat below before comparing against your own numbers:
 
 | | before | after |
@@ -255,7 +256,7 @@ on:
   pull_request:
 jobs:
   p:
-    runs-on: [self-hosted, builder02]
+    runs-on: [self-hosted, linux]
     steps:
       - run: python3 ci/tools/test_runtime.py --nginx x --module y
 EOF

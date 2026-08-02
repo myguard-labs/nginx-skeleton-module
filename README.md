@@ -198,7 +198,7 @@ Each of these is a bug that shipped, or a red that wasted a session, in a real
 module here. Change them only on purpose.
 
 **`TEST_NGINX_TIMEOUT: "20"`** — Test::Nginx's client read timeout defaults to
-~2s. On the shared `builder02` LXC a live request under normal build-host load
+~2s. On a shared self-hosted LXC runner a live request under normal build-host load
 routinely takes longer, and the suite then fails as a *contiguous sweep of
 `client socket timed out` with zero assertion failures*. That shape means the
 harness, not the module. Export it locally too, or clean tests "fail".
@@ -305,8 +305,8 @@ already on the standard and you are forwarding a specific improvement.
   - a job that binds test ports without its own declared band. Presence of
     `TEST_NGINX_PORT` is not the check — the check is a **distinct job-level
     band**, verified free with `ci/tools/max-port.sh` before anything binds it.
-    Test::Nginx's default 1984 is unarbitrated and `builder02` runs six slots
-    against one network, so the collision reads as a module regression
+    Test::Nginx's default 1984 is unarbitrated and a self-hosted host runs
+    several runner slots against one network, so the collision reads as a module regression
     (`bind() … Address already in use`). **Do not copy this repo's step order:**
     in `build-test.yml` the `Verify this job's port band is free` step sits
     *after* `Run ci/t/`, so `prove` binds the band unverified and the one failure
@@ -329,18 +329,16 @@ already on the standard and you are forwarding a specific improvement.
   The last two only exist in a module that already took those files; the first
   two apply to any module that runs `prove` or reports coverage.
 
-  **Survey of the nine siblings, 2026-08-01 — read-only, not acted on:** no
-  sibling carries a `.github/versions.env` or a `ci/linter/workflow_policy.py`,
-  so drift classes 3 and 4 cannot exist in any of them yet — they arrive *with*
-  the rollout, and the version you hand over is the one that has to be correct.
-  The port band is live in **seven**: api-abuse, autocert, error-abuse,
-  sentinel, label-autoconf, strip-filter, http-zstd all run `prove` on
-  `[self-hosted, builder02, lxc]` with no `TEST_NGINX_PORT`. shield is immune
-  (`tools/run-tests.sh` picks a free port) and cache-turbo has no prove
-  workflow. `--gcov-object-directory` appears in cache-turbo only, not currently
-  breaking (builder02 has gcovr 7.2, the fork arm's ubuntu-latest 24.04 has
-  7.0). Re-derive before relying on this — it is a snapshot, and the sibling
-  repos are user-owned.
+  **What a survey of the derived modules found, 2026-08-01 — nine targets,
+  read-only:** not one carried a `.github/versions.env` or a
+  `ci/linter/workflow_policy.py`, so drift classes 3 and 4 could not exist in
+  any of them. Those files arrive *with* the rollout, which makes the version
+  you hand over the one that has to be correct — a different job from auditing
+  what is already there. Seven of the nine ran `prove` on a self-hosted label
+  with no `TEST_NGINX_PORT` at all; of the remaining two, one picked a free port
+  from its own test driver and one had no `prove` workflow. The coverage option
+  turned up in a single module and was not breaking there. Counts, not a
+  standing fact: re-derive against the targets you actually have.
 - **Verify the gate red.** A gate you moved but never saw fail is a gate you did
   not verify. State the probe in the PR body.
 - **Remote CI green before merge**, then squash, delete the branch, and bump the

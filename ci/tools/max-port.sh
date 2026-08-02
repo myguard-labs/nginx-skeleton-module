@@ -22,7 +22,7 @@
 #      listener fails with "Address already in use", and the run dies before a
 #      single assertion executes. The victim is arbitrary and a rerun "fixes"
 #      it, which is exactly how this masquerades as a fixture flake -- it cost a
-#      sibling repo weeks (myguard-labs/nginx-autocert-module#139).
+#      sibling repo weeks.
 #   2. THE BAND IS ALREADY OCCUPIED. On a persistent self-hosted runner a
 #      previous run's server can outlive its job. Binding on top of it does not
 #      fail loudly; the old process keeps answering and the new suite tests the

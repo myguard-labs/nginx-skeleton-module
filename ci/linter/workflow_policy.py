@@ -76,7 +76,7 @@ def _trust_split(labels: list[str]) -> str:
 # GitHub-hosted runner and everything else on the self-hosted pool.
 #
 # Why the split matters here specifically: a `pull_request`-triggered job checks
-# out and EXECUTES scripts from the PR head. builder02's runners are persistent
+# out and EXECUTES scripts from the PR head. The self-hosted runners are persistent
 # and shared with the Debian package builds, so running a fork's code on them is
 # arbitrary code execution on the build host, with whatever the previous job
 # left behind still on disk. The hosted arm is what makes this repo safe to
@@ -230,7 +230,7 @@ def check_runners() -> int:
     return report(
         "lint-ci-runners",
         errors,
-        "fork PRs stay on hosted runners; trusted events reach builder02",
+        "fork PRs stay on hosted runners; trusted events reach self-hosted",
     )
 
 

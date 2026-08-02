@@ -90,7 +90,7 @@ echo "==> Test::Nginx suite against the instrumented server"
 # TEST_NGINX_PORT pinned to this job's band. Test::Nginx::Socket falls back to
 # TEST_NGINX_SERVER_PORT, then TEST_NGINX_PORT, then a hardcoded 1984
 # (Test/Nginx/Util.pm: `our $ServerPort = $ENV{TEST_NGINX_SERVER_PORT} ||
-# $ENV{TEST_NGINX_PORT} || 1984`). builder02 runs six CI slots at once, so two
+# $ENV{TEST_NGINX_PORT} || 1984`). The build host runs six CI slots at once, so two
 # jobs reaching that default bind the same port on one host: one fails with
 # "Address already in use", or worse, one suite quietly talks to the other
 # job's server. The band is per-job and the two suites here run in sequence, so

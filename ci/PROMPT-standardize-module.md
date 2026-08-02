@@ -26,7 +26,7 @@ Tell which you are looking at: a standardised target has a `ci/` layout, a
 
 ## Context you are given
 
-- **Target module:** `<TARGET>` (e.g. `/opt/myguard/labs/nginx-http-shield-module`)
+- **Target module:** `<TARGET>` (e.g. `/opt/myguard/labs/nginx-<name>-module`)
 - **Reference:** `/opt/myguard/labs/nginx-skeleton-module`
 - **Memory mirror:** `/opt/myguard/memory/labs/<module-name>/` — read
   `index.md`, `issues.md`, `lessons.md` FIRST. A trap already recorded there
@@ -76,8 +76,8 @@ Record, in the memory mirror's `index.md`:
 - current coverage number, if any tooling exists (usually none)
 
 Layouts seen across the org, so you know what you are walking into:
-`t/` + `fuzz/` at the root (most modules), `tests/` + `fuzz/` (autocert),
-already-migrated `ci/` (cache-turbo, label-autoconf).
+`t/` + `fuzz/` at the root (most modules), `tests/` + `fuzz/` (a few), and an
+already-migrated `ci/` (the ones a previous rollout reached).
 
 ---
 
@@ -151,8 +151,8 @@ Members are `workflow_call:`-only; only `ci.yml` has `pull_request:`. Two entry
 points run everything twice per PR and defeat the laning.
 
 **Every job that runs `prove` must pin its own port band.** Test::Nginx binds
-`TEST_NGINX_PORT`, default 1984, and nothing arbitrates it; `builder02` runs six
-slots against one network, so two jobs on the default collide and the loser dies
+`TEST_NGINX_PORT`, default 1984, and nothing arbitrates it; a self-hosted host
+runs several runner slots against one network, so two jobs on the default collide and the loser dies
 with `bind() to 127.0.0.1:1984 failed (98: Address already in use)` — which reads
 as a module regression and is not one. The reference declares a distinct
 job-level `TEST_BASE_PORT` per workflow (`build-test.yml` 19200, `ci-deep.yml`
@@ -338,7 +338,7 @@ Carry these three from the reference; each was measured, not assumed:
   upload.
 - **`semgrep --jobs=1`** — a *correctness* flag, not a speed one. semgrep-core
   defaults to one OCaml domain per core and each domain opens its own io_uring
-  ring against the host's `RLIMIT_MEMLOCK` (8 MB on builder02, shared with
+  ring against the host's `RLIMIT_MEMLOCK` (8 MB on the build host, shared with
   every other job). When the runners are busy it exhausts and semgrep-core
   aborts with `Unix_error: Cannot allocate memory io_uring_queue_init`, exit 2
   — a red gate caused by a *neighbouring* job, on a scan of three files where
@@ -379,7 +379,8 @@ appear in the output and both are named in the `== FAIL:` line.
 ## Phase 7 — runner topology: lanes, at most four
 
 The reference lanes the suite so peak self-hosted use stays bounded — CI
-wall-clock on builder02 is dominated by jobs QUEUEING for a label-matching
+wall-clock on a self-hosted host is dominated by jobs QUEUEING for a
+label-matching
 slot, not by the jobs themselves. Ten simultaneous requests just means the tail
 waits.
 
@@ -415,8 +416,8 @@ Then:
 3. If it does not fit in four, the honest fixes are: move a check out-of-band
    (monthly), time-box it, or put it on a hosted runner — not "add a fifth".
 4. **A lane is not a slot.** Count the target's real slots
-   (`systemctl list-units | grep ci-ephemeral` on the runner host — six on
-   builder02), and remember a reusable workflow can fan out into many
+   (`systemctl list-units | grep ci-ephemeral` on the runner host — six on the
+   reference's host), and remember a reusable workflow can fan out into many
    concurrent jobs: the reference's Build&Test is *five*, so the observed peak
    is 7 against 6 slots. Brief oversubscription at t=0 is acceptable; writing
    "caps peak runner use at three" when it is seven is not.
@@ -455,7 +456,7 @@ executing untrusted code is arbitrary code execution on the build host.
 Required:
 
 - **Fork routing.** Every self-hosted job uses the reference's expression:
-  `runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}`
+  `runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","<runner-label>","lxc"]') }}`
   A fork PR never reaches the build host.
 - **No `pull_request_target`**, ever, in a repo with self-hosted runners. It
   runs with a writable token in the base-repo context; combined with a fork's

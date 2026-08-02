@@ -55,7 +55,7 @@
 #                       output.
 #
 # apt/package installs are NOT cached here, and that is the conclusion, not an
-# omission. builder02's runners are persistent, so ccache/mold/eatmydata are
+# omission. The self-hosted runners are persistent, so ccache/mold/eatmydata are
 # presence-checked and skipped (not reinstalled) by .github/actions/build-cache
 # -- see its "Ensure ccache, mold and eatmydata are present" step, which has
 # gated apt-get behind that check since before eatmydata joined the list. There
@@ -284,7 +284,7 @@ STAMP="objs/.conf-stamp"
 # objs/ is scratch, rebuilt from src/ on any failure, never the thing a crash
 # needs to recover. eatmydata disables fsync for the child process only, so a
 # host crash mid-configure just means "run it again", same as any interrupted
-# build. Measured on builder02 (SSD-backed incus container, so fsync was
+# build. Measured on the build host (SSD-backed incus container, so fsync was
 # already cheap): 3x runs plain vs 3x wrapped, ~3.6s either way -- no
 # measurable win on THIS host/filesystem, within run-to-run noise. Kept
 # anyway because it is a correct, load-bearing-safe no-op here and a real win
