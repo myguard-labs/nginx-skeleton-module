@@ -134,7 +134,7 @@ def load(path: pathlib.Path) -> dict:
     try:
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
-        raise PolicyError(f"{path.name}: unparseable YAML: {exc}") from exc
+        raise PolicyError(f"{path.name}: unparsable YAML: {exc}") from exc
     if not isinstance(doc, dict):
         raise PolicyError(f"{path.name}: top level is not a mapping")
     return doc
