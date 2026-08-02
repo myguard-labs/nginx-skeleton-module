@@ -107,6 +107,11 @@ policy_ 1 bypass-inline-events runners
 # no port band reported "no runtime-bearing jobs" and exit 0.
 policy_ 1 bypass-commented-job-key ports
 
+# A band verifier placed BELOW the first binder. Declaration, pass-through and
+# uniqueness all hold, so the presence checks stay green -- this repo's own
+# build-test.yml sat in exactly this shape until 2026-08-02.
+policy_ 1 verify-after-bind ports
+
 # Unparseable YAML is "could not run" (2), never "clean" -- GitHub may still
 # read a file this parser rejects, so a verdict over the rest of the tree would
 # be unsupported. Fixture is generated: a committed broken-YAML file would trip

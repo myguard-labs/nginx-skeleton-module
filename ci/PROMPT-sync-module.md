@@ -143,12 +143,11 @@ Presence of `TEST_NGINX_PORT` is **not** the check. The check is:
 - enforced by `ci/linter/lint-ci-ports.sh`, which fails the build when a job
   starts the runtime driver without declaring a band.
 
-**Do not copy this repo's step order.** In `build-test.yml` the
-`Verify this job's port band is free` step currently sits *after* `Run ci/t/`,
-so `prove` binds the band unverified and the one failure `max-port.sh` exists to
-name still arrives as an unattributed bind error or timeout. Put the verify step
-above the first binder in the target, and note the divergence in the PR body so
-nobody "fixes" it back.
+"Before the first step that binds" is the part that gets copied wrong. A verify
+step placed above the *runtime* suite looks right and guards nothing if a
+`prove` step binds the same band earlier — which is what `build-test.yml` itself
+shipped until 2026-08-02. Read the target's step ORDER, not just the presence of
+the step.
 
 A target whose test driver picks its own free port is already immune; leave it
 alone and say so.
