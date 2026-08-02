@@ -36,6 +36,15 @@ Every PR runs a laned suite of short gates through one entry point,
 `ci.yml` (one member, A/UBSan, is path-gated to code changes). They exist to
 catch the classes of bugs that C code in a web server cannot afford:
 
+- **Lint** (`lint.yml`) — the same `ci/linter/` gate you can run locally, via
+  the same entry point: nginx source conventions, shellcheck, ruff,
+  perlcritic + `perl -c`, yamllint, codespell, actionlint, **zizmor**
+  (workflow security) and the repo's own workflow-policy checks. It skips the
+  `c` checker on purpose — flawfinder/cppcheck/semgrep over `src/` are
+  Security scanners' job at the same thresholds, and running them twice per PR
+  buys nothing but queue time. Hosted runner, so it never waits for a
+  self-hosted slot. Run `ci/linter/run-all.sh` before pushing and this one is
+  green on arrival.
 - **Build & Test** (`build-test.yml`) — shellcheck/cppcheck/actionlint,
   builds the module against current nginx, asserts the `.so` actually
   dlopens and a bad config is rejected, `-Werror` strict compile, then

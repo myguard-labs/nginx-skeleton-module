@@ -144,7 +144,7 @@ lane map and its measured durations live in `ci.yml`'s header comment.
 | `fuzzing.yml` | PR (via `ci.yml`) | replay every past crash, then 120s fresh fuzz |
 | `valgrind.yml` | PR (via `ci.yml`) | 60s memcheck soak |
 | `security-scanners.yml` | PR (via `ci.yml`) | flawfinder (≥4 blocks), clang-tidy (blocks), semgrep (advisory) |
-| `codeql.yml` | PR (via `ci.yml`) | CodeQL, **module TU only** |
+| `codeql.yml` | PR (via `ci.yml`) + monthly | CodeQL, **module TU only** |
 | `ci-deep.yml` | monthly + dispatch | 4h fuzz, 600s memcheck, 600s helgrind, **nginx mainline+stable+angie build & test matrix**, **coverage report** (a report, never a gate) |
 | `bump.yml` | weekly + dispatch | checks nginx.org/angie.software for newer pins, updates `ci/vendor/nginx-tests` submodule, commits+pushes to main if anything moved |
 
@@ -364,7 +364,8 @@ Tests: `cpanminus` + `cpanm Test::Nginx`
 Fuzz: `clang` (needs `-fsanitize=fuzzer`)
 Soak: `valgrind`
 Lint: `ci/linter/install-linters.sh` (shellcheck, cppcheck, flawfinder,
-yamllint, clang-tidy, perlcritic, ruff, semgrep, actionlint, Test::Nginx)
+yamllint, clang-tidy, perlcritic, ruff, semgrep, codespell, actionlint,
+zizmor, Test::Nginx)
 
 ## Contributing
 

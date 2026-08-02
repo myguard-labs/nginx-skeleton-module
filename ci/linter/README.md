@@ -137,16 +137,18 @@ Bypass in an emergency with `git commit --no-verify`.
 **This replaces the `pre-commit` framework hook.** `core.hooksPath` makes git
 ignore `.git/hooks/` entirely, including the hook `pre-commit install` writes
 there. The repo's `.pre-commit-config.yaml` still exists and covers overlapping
-ground (whitespace fixers, private-key detection, flawfinder, semgrep,
-shellcheck, actionlint). Pick one:
+ground (whitespace fixers, private-key detection, gitleaks, flawfinder,
+semgrep, cppcheck, ruff, shellcheck, actionlint). Pick one:
 
 - `git config core.hooksPath .githooks` — this directory: also covers Perl,
-  Python and the nginx conventions, no Python framework needed.
+  yamllint and the nginx conventions, no Python framework needed.
 - `pipx install pre-commit && pre-commit install` — the framework: also runs
-  the whitespace/EOF fixers and `detect-private-key`, but not `lint-nginx.sh`
-  or `lint-perl.sh`. Then leave `core.hooksPath` unset.
+  the whitespace/EOF fixers, `detect-private-key` and `gitleaks` over the
+  staged patch, but not `lint-nginx.sh`, `lint-perl.sh` or `lint-yaml.sh`'s
+  yamllint/zizmor passes. Then leave `core.hooksPath` unset.
 
-Running both means running flawfinder and semgrep twice per commit.
+Running both means running flawfinder, semgrep, cppcheck and ruff twice per
+commit.
 
 ## 3. Use it
 
