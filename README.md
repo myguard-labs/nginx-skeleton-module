@@ -313,13 +313,16 @@ module, one session, one repo:
     `TEST_NGINX_PORT` is not the check — the check is a **distinct job-level
     band**, verified free with `ci/tools/max-port.sh` before anything binds it.
     Test::Nginx's default 1984 is unarbitrated and a self-hosted host runs
-    several runner slots against one network, so the collision reads as a module regression
-    (`bind() … Address already in use`). **Do not copy this repo's step order:**
-    in `build-test.yml` the `Verify this job's port band is free` step sits
-    *after* `Run ci/t/`, so `prove` binds the band unverified and the one failure
-    `max-port.sh` exists to name still arrives as an unattributed bind error or
-    timeout. The verify step belongs above the first step that binds. Open row in
-    the mirror's `issues.md`; a sync PR is a fine place to fix it here too.
+    several runner slots against one network, so the collision reads as a
+    module regression (`bind() … Address already in use`). **Do not copy this
+    repo's step order:** in `build-test.yml` the `Verify this job's port band is
+    free` step sits *after* `Run ci/t/`, so `prove` binds the band unverified
+    and the one failure `max-port.sh` exists to name still arrives as an
+    unattributed bind error or timeout. The verify step belongs above the first
+    step that binds. Order it correctly in the target and move on — reordering
+    it *here* is a workflow change with its own CI run, so it belongs in its own
+    PR against this repo, not in a sync PR. Open row in the mirror's
+    `issues.md`.
   - `--gcov-object-directory` in `ci/tools/coverage.sh`. The condition is the
     **gcovr major version the job actually runs**, not whether the pin exists:
     the `--gcov-`-prefixed spelling arrived in gcovr 7.0 and fails argparse
