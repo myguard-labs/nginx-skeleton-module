@@ -73,6 +73,13 @@ PIPX_TOOLS=(
     "semgrep:semgrep==1.169.0"        # C, pinned to the CI version on purpose:
                                       # an unpinned semgrep changes findings
                                       # under you and local stops matching CI.
+    "codespell:codespell"             # ci/linter/lint-spelling.sh. Unpinned: the
+                                      # dictionary is the point, and a new entry
+                                      # going red is one typo to fix, not drift.
+    "pre-commit:pre-commit"           # .githooks/pre-commit runs the
+                                      # .pre-commit-config.yaml hooks too, and
+                                      # treats its absence as exit 2 rather than
+                                      # skipping the secret and C SAST gates.
 )
 # apt has no libtest-nginx-perl on every target release; cpan always does.
 CPAN_MODULES=(

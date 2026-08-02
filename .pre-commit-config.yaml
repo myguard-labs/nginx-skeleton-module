@@ -32,7 +32,17 @@
 # unsafe things with untrusted input and would trip flawfinder forever.
 #
 # Install (once per clone):
-#   pipx install pre-commit && pre-commit install
+#   pipx install pre-commit
+#   git config core.hooksPath .githooks
+#
+# Do NOT run `pre-commit install`. It writes .git/hooks/pre-commit, and
+# core.hooksPath REPLACES that directory rather than adding to it -- so the hook
+# it installs is never executed while looking installed from every angle a human
+# checks. That is how this whole file sat inert here until 2026-08-02: a commit
+# carrying trailing whitespace and no final newline went through clean, past
+# detect-private-key and the C SAST gates with it. .githooks/pre-commit invokes
+# `pre-commit run` itself, and carries the probe that proves it.
+#
 # Run against everything without committing:
 #   pre-commit run --all-files
 #

@@ -62,5 +62,8 @@ jobs:
 
       - name: Run linters
         env:
-          LINT_ONLY: nginx sh python perl yaml ci-runners ci-ports docs-drift
+          # Every checker except "c" -- adding a lint-*.sh without adding its
+          # name here leaves it running locally and never in CI, which is the
+          # quieter half of a gate that is not really a gate.
+          LINT_ONLY: nginx sh python perl yaml spelling ci-runners ci-ports docs-drift
         run: ci/linter/run-all.sh

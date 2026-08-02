@@ -112,7 +112,26 @@ policy_ 1 bypass-commented-job-key ports
 # build-test.yml sat in exactly this shape until 2026-08-02.
 policy_ 1 verify-after-bind ports
 
-# Unparseable YAML is "could not run" (2), never "clean" -- GitHub may still
+# WIRING CONTROLS. These assert that a checker is reachable at all, which is a
+# weaker claim than "it goes red on a defect" -- the red-direction probes need
+# real tools and live in each checker's header instead, so this file keeps its
+# no-linter-required property. They exist because both failures below were
+# silent: a checker nobody dispatches and a hook nobody runs look exactly like a
+# clean tree.
+#
+# core.hooksPath REPLACES .git/hooks/, so `pre-commit install` writes a file git
+# never reads. Measured 2026-08-02: trailing whitespace and a missing final
+# newline committed clean past the hooks whose only job is those two things.
+# .githooks/pre-commit therefore has to invoke pre-commit itself.
+case_ 0 "the commit hook invokes the pre-commit-config hooks" \
+    grep -q '^ *pre-commit run' .githooks/pre-commit
+
+# run-all.sh dispatches by glob, so a checker that is not executable, or is
+# named outside the lint-*.sh pattern, is silently not run.
+case_ 0 "lint-spelling is dispatched by run-all.sh" \
+    bash -c 'ci/linter/run-all.sh --list | grep -q lint-spelling.sh'
+
+# Unparsable YAML is "could not run" (2), never "clean" -- GitHub may still
 # read a file this parser rejects, so a verdict over the rest of the tree would
 # be unsupported. Fixture is generated: a committed broken-YAML file would trip
 # yamllint on the real tree.
@@ -120,7 +139,7 @@ badroot="$(mktemp -d)"
 trap 'rm -rf "$badroot"' EXIT
 mkdir -p "$badroot/.github/workflows"
 printf 'on: [pull_request\njobs: {\n' > "$badroot/.github/workflows/broken.yml"
-case_ 2 "policy runners: unparseable YAML is exit 2, not clean" \
+case_ 2 "policy runners: unparsable YAML is exit 2, not clean" \
     env "WORKFLOW_POLICY_ROOT=$badroot" python3 ci/linter/workflow_policy.py runners
 
 if [ "$rc" -eq 0 ]; then
