@@ -103,7 +103,17 @@ RUNTIME_DRIVER = "ci/tools/test_runtime.py"
 # below needs both: a verify step is only a guard for the binders that come
 # after it, and `prove` is a binder even though it is not the runtime driver.
 BAND_VERIFIER = "ci/tools/max-port.sh"
-BINDERS = (RUNTIME_DRIVER, "prove ", "ci/tools/coverage.sh")
+# Word-bounded on purpose: a bare "prove" substring also matches `approve`,
+# `improve` and `prover`, and a run block that merely says "improve the fixture"
+# is not a binder. A shell comment inside a run block still counts -- treating a
+# commented-out binder as absent is the safe direction here, since the finding is
+# about the step that DOES bind.
+BINDERS = (
+    re.escape(RUNTIME_DRIVER),
+    r"(?<![\w./-])prove(?![\w./-])",
+    re.escape("ci/tools/coverage.sh"),
+)
+BINDER_RE = re.compile("|".join(BINDERS))
 
 
 def workflows() -> list[pathlib.Path]:
@@ -285,11 +295,19 @@ def _order_finding(where: str, node: dict) -> str | None:
     verify = next((i for i, r in enumerate(runs) if BAND_VERIFIER in r), None)
     if verify is None:
         return None
-    first_bind = next(
-        (i for i, r in enumerate(runs) if any(b in r for b in BINDERS)), None
-    )
+    first_bind = next((i for i, r in enumerate(runs) if BINDER_RE.search(r)), None)
     if first_bind is None or first_bind > verify:
         return None
+    # Same step: a multi-line `run:` block may legitimately verify and then bind.
+    # Index order cannot separate those, so fall back to position within the text.
+    if first_bind == verify:
+        run = runs[verify]
+        if run.index(BAND_VERIFIER) < BINDER_RE.search(run).start():
+            return None
+        return (
+            f"{where} binds the band earlier in the same step than it runs "
+            f"{BAND_VERIFIER} (step {verify + 1}) -- verify first, then bind"
+        )
     return (
         f"{where} runs {BAND_VERIFIER} at step {verify + 1}, after step "
         f"{first_bind + 1} has already bound the band -- the verifier only "
