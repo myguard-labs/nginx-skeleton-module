@@ -5,10 +5,14 @@
 #
 #   ci/tools/bump-versions.sh [--dry-run]
 #
-# Two things move here:
+# Four things move here:
 #   - .github/versions.env            -- nginx mainline/stable + angie versions
 #                                        AND their sha256s, rewritten wholesale
 #                                        by .github/scripts/compute-versions.sh
+#   - GitHub Action sha pins          -- ci/tools/bump-actions.sh (sha + the tag
+#                                        comment beside it, as one unit)
+#   - pinned linter versions          -- ci/tools/bump-tools.sh (semgrep, ruff;
+#                                        every copy of each pin, kept in sync)
 #   - ci/vendor/nginx-tests submodule -- `git submodule update --remote`
 #
 # This script used to sed a version literal into each of seven workflow files,
@@ -67,6 +71,32 @@ else
         echo "(dry-run: versions.env would change as shown above)"
         CHANGED=1
     fi
+fi
+
+# --- GitHub Action pins ----------------------------------------------------
+# Actions are already sha-pinned; what was missing was anything that MOVES the
+# pin. An unmaintained sha is not "stable", it is a frozen copy of an action
+# that stopped receiving its own security fixes. Major-line only -- see
+# bump-actions.sh for why crossing a major unattended is not wanted.
+if [ "$DRY_RUN" = 0 ]; then
+    bash ci/tools/bump-actions.sh
+else
+    bash ci/tools/bump-actions.sh --dry-run
+fi
+if ! git diff --quiet -- .github/ 2>/dev/null; then
+    CHANGED=1
+fi
+
+# --- pinned linter versions ------------------------------------------------
+# semgrep/ruff are pinned so local lint predicts remote CI; bump-tools.sh keeps
+# every copy of each pin in step and fails if one is left behind.
+if [ "$DRY_RUN" = 0 ]; then
+    bash ci/tools/bump-tools.sh
+else
+    bash ci/tools/bump-tools.sh --dry-run
+fi
+if ! git diff --quiet -- .github/ ci/ 2>/dev/null; then
+    CHANGED=1
 fi
 
 # --- vendored nginx-tests submodule ---------------------------------------
