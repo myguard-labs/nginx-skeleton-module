@@ -15,7 +15,7 @@ finding shellcheck could have named in two seconds. Every script is standalone;
 | `lint-perl.sh` | `ci/t/*.t`, `*.pl`, `*.pm` | `perl -c` + perlcritic severity ≥4 |
 | `lint-yaml.sh` | `*.yml`, `*.yaml` | yamllint (errors block, warnings visible), actionlint + zizmor (`--persona=pedantic`) on `.github/workflows/` |
 | `lint-ci-runners.sh` | `.github/workflows/` | fork PRs never select the self-hosted pool; `pull_request_target` forbidden |
-| `lint-ci-ports.sh` | `.github/workflows/` | every runtime-bearing job declares a distinct `TEST_BASE_PORT` band and binds it |
+| `lint-ci-ports.sh` | `.github/workflows/` | every runtime-bearing job declares a distinct `TEST_BASE_PORT` band, binds it, and verifies it above the FIRST binding step |
 | `lint-docs-drift.sh` | `.github/workflows/`, `README.md` | every workflow documented, every documented workflow exists |
 | `run-all.sh` | all of the above | runs every check, reports once |
 | `install-linters.sh` | — | apt-get → pipx → cpan → upstream binary |

@@ -99,6 +99,12 @@ HOSTED = re.compile(r"ubuntu-(?:latest|[0-9]+\.[0-9]+)")
 # the port-band declaration checked below.
 RUNTIME_DRIVER = "ci/tools/test_runtime.py"
 
+# The band verifier, and everything that BINDS the band. The ordering check
+# below needs both: a verify step is only a guard for the binders that come
+# after it, and `prove` is a binder even though it is not the runtime driver.
+BAND_VERIFIER = "ci/tools/max-port.sh"
+BINDERS = (RUNTIME_DRIVER, "prove ", "ci/tools/coverage.sh")
+
 
 def workflows() -> list[pathlib.Path]:
     """Every workflow file, BOTH extensions.
@@ -251,6 +257,46 @@ def _body(node: dict) -> str:
     return yaml.safe_dump(node, default_flow_style=False, sort_keys=False)
 
 
+def _steps(node: dict) -> list[str]:
+    """Each step's `run:` text, in declaration order. Non-run steps keep their
+    slot as an empty string so an index comparison stays an ORDER comparison."""
+    out: list[str] = []
+    for step in node.get("steps") or []:
+        if not isinstance(step, dict):
+            out.append("")
+            continue
+        run = step.get("run")
+        out.append(run if isinstance(run, str) else "")
+    return out
+
+
+def _order_finding(where: str, node: dict) -> str | None:
+    """A band verifier that runs after something has already bound the band.
+
+    The verify step is not a property of the job, it is a property of a
+    POSITION: it can only speak for the steps below it. `build-test.yml` shipped
+    it between `prove` and the runtime suite, which reads as guarded and left
+    the first binder unguarded -- the failure max-port.sh exists to name still
+    arrived inside `prove` as a bind error or a timeout with no cause attached.
+    Only jobs that already carry the verifier are checked here; whether a
+    binding job must carry one at all is the declaration check above.
+    """
+    runs = _steps(node)
+    verify = next((i for i, r in enumerate(runs) if BAND_VERIFIER in r), None)
+    if verify is None:
+        return None
+    first_bind = next(
+        (i for i, r in enumerate(runs) if any(b in r for b in BINDERS)), None
+    )
+    if first_bind is None or first_bind > verify:
+        return None
+    return (
+        f"{where} runs {BAND_VERIFIER} at step {verify + 1}, after step "
+        f"{first_bind + 1} has already bound the band -- the verifier only "
+        "guards the steps below it, so move it above the FIRST binder"
+    )
+
+
 def check_ports() -> int:
     errors: list[str] = []
     bands: dict[str, str] = {}  # port value -> "file:job" that claimed it
@@ -262,6 +308,10 @@ def check_ports() -> int:
             declared = re.search(r"(?m)^\s*TEST_BASE_PORT:\s*[\"']?(\d+)", body)
             starts_runtime = RUNTIME_DRIVER in body
             where = f"{path.name}:{job}"
+
+            order = _order_finding(where, node)
+            if order:
+                errors.append(order)
 
             # THE CHECK THAT MATTERS MOST. A new runtime-bearing job added later
             # with no band is invisible to the uniqueness check below (it

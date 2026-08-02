@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 # ci/linter/lint-ci-ports.sh -- every runtime-bearing CI job owns a distinct
-# test port band, and actually binds the band it declared.
+# test port band, actually binds the band it declared, and proves the band free
+# BEFORE the first step that binds it.
 #
 # The rule and the reasoning live in ci/linter/workflow_policy.py (subcommand
 # `ports`); this wrapper exists so run-all.sh picks the check up by glob and
