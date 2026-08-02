@@ -9,20 +9,29 @@
 # layout instead of drifting toward a copied-around guess.
 #
 # Purpose: catch the cheap half of what CI catches, before a push burns a
-# remote round-trip. These hooks deliberately MIRROR the CI thresholds in
-# .github/workflows/security-scanners.yml (flawfinder >=4, semgrep >=WARNING).
-# If a threshold moves there, move it here in the same commit, or local-green
-# stops predicting remote-green.
+# remote round-trip. These hooks mirror the CI gates in .github/workflows/
+# (flawfinder >=4, semgrep >=WARNING, cppcheck, ruff). If a threshold moves
+# there, move it here in the same commit, or local-green stops predicting
+# remote-green.
+#
+# The mirror is EXACT and was not always: flawfinder and
+# semgrep gated here while their four CI sites piped to `tee` with no
+# --error-level and an explicit `|| true`, so a finding blocked a local commit
+# and then sailed through CI. The fix went in the direction that KEEPS
+# coverage -- CI was gated up to these thresholds, not these relaxed down to
+# CI. If you find them diverged again, fix CI first.
 #
 # Detected in this repo:
 #   C source dirs : src
+#   Python dirs   : ci
 #   fuzz corpora  : ci/fuzz/corpus, ci/fuzz/regressions
 #
 # What is NOT here, and why:
 #   clang-tidy   -- needs ngx_auto_config.h, which only exists after nginx is
 #                   configured. A hook cannot assume a built tree, and one that
 #                   silently skips when the tree is missing is a vacuous gate.
-#                   Stays CI-only on purpose.
+#                   Stays CI-only on purpose. NOTE this reason does NOT extend
+#                   to cppcheck, which parses standalone and IS gated below.
 #   clang-format -- no .clang-format in these repos, so there is no agreed style
 #                   to enforce; adding one would reformat existing code in an
 #                   unrelated diff.
@@ -35,13 +44,15 @@
 #   pipx install pre-commit
 #   git config core.hooksPath .githooks
 #
-# Do NOT run `pre-commit install`. It writes .git/hooks/pre-commit, and
-# core.hooksPath REPLACES that directory rather than adding to it -- so the hook
-# it installs is never executed while looking installed from every angle a human
-# checks. That is how this whole file sat inert here until 2026-08-02: a commit
-# carrying trailing whitespace and no final newline went through clean, past
-# detect-private-key and the C SAST gates with it. .githooks/pre-commit invokes
-# `pre-commit run` itself, and carries the probe that proves it.
+# Do NOT run `pre-commit install` in this repo. It writes .git/hooks/pre-commit,
+# and core.hooksPath REPLACES .git/hooks/ entirely -- git consults one or the
+# other, never both. The result is an inert config that looks installed from
+# every angle: config present, install reported success, hook file on disk with
+# a plausible date, and nothing ever going red to reveal it.
+# .githooks/pre-commit invokes `pre-commit run --hook-stage pre-commit` itself,
+# which is what actually runs these hooks. A missing pre-commit binary is exit 2
+# there (blocking), not a skip -- a gate that skips when its tool is absent
+# reports green while checking nothing.
 #
 # Run against everything without committing:
 #   pre-commit run --all-files
@@ -85,13 +96,41 @@ repos:
         args: [--maxkb=512]
       # Test vectors are not secrets. A derived module's unit tests can carry
       # locked PEM fixtures (an elided MIGH... blob, a documented P-256
-      # vector); gating on those is a pure false positive,
-      # while the hook still guards every real path.
+      # vector); gating on those is a pure false positive, while the hook still
+      # guards every real path.
       - id: detect-private-key
         exclude: '^tests?/'
 
   - repo: local
     hooks:
+      # Mirrors the CI "gitleaks" step. Different scope on purpose: a commit
+      # hook can only see what is being committed, so it scans the staged
+      # patch, while CI scans the whole history -- a secret that was committed
+      # and later removed is still published, and only the history scan finds
+      # it. Measured at zero findings before the gate went in.
+      #
+      # detect-private-key above is not a substitute: it matches PEM key
+      # headers only, and misses every token-shaped secret (PATs, bot tokens,
+      # cloud keys), which is what actually leaks out of these repos.
+      #
+      # VERIFY WITH A NON-EXAMPLE SECRET. The obvious probe -- AWS's own
+      # AKIAIOSFODNN7EXAMPLE / wJalrXUtnFEMI... pair -- is allowlisted by the
+      # default ruleset and reports "no leaks found", which reads exactly like
+      # a broken gate. Probe with a plausible token instead:
+      # Build the probe token from parts -- a literal one written out here is
+      # itself a leak by this hook's own rules, and would land the gate red on
+      # its own config file:
+      #   T=xoxb-2024827913265; T="$T-2024891053289-fJk2mQ8vNwLpXcRt7HzYbA31"
+      #   printf 'k = "%s"\n' "$T" > p.txt
+      #   git add p.txt && gitleaks git --staged --no-banner --redact -v
+      #   git reset -q p.txt && rm p.txt        # expect: leaks found: 1
+      - id: gitleaks
+        name: gitleaks (staged patch)
+        entry: gitleaks git --staged --no-banner --redact
+        language: system
+        pass_filenames: false
+        always_run: true
+
       # Mirrors the CI "flawfinder (gate on >=4)" step: fires on exactly what
       # CI blocks on. Noise below level 4 would train everyone to --no-verify.
       - id: flawfinder
@@ -128,24 +167,80 @@ repos:
         pass_filenames: true
         require_serial: true
 
+      # Mirrors the CI "Static analysis" step in build-test.yml: same enable
+      # set, same suppressions, same -I. Any of those diverging makes local
+      # green stop predicting remote green, which is this file's whole job.
+      #
+      # unusedStructMember is suppressed because cppcheck sees one TU at a
+      # time here and cannot know a member is read from another file; -I is
+      # the C source dir, so headers next to the sources resolve rather than
+      # being reported as missing.
+      #
+      # -DNGX_PTR_SIZE=8: the breaker probe-word layout selects on this macro
+      # and #errors when it is undefined. It normally arrives from nginx's
+      # generated objs/ngx_auto_config.h, which cppcheck never sees, so it has
+      # to be supplied -- an undefined macro in #if silently evaluates to 0 and
+      # would pick the wrong layout for the whole analysis (H-1).
+      #
+      # Unlike clang-tidy this needs NO configured nginx tree, which is why it
+      # can gate here at all.
+      - id: cppcheck
+        name: cppcheck (warning,performance,portability)
+        entry: cppcheck --enable=warning,performance,portability
+               --error-exitcode=1 --suppress=missingIncludeSystem
+               --suppress=normalCheckLevelMaxBranches --suppress=unusedFunction
+               --suppress=unusedStructMember -I src -DNGX_PTR_SIZE=8
+        language: system
+        files: '^src/.*\.[ch]$'
+        pass_filenames: true
+
+      # Python is the runtime TEST HARNESS in these repos, so it carries the
+      # same weight as C -- but nothing linted it before this hook.
+      #
+      # RUF059 (unused-unpacked-variable) is why this hook exists. A captured-
+      # then-never-read variable is the known tell for the vacuous-assertion
+      # class: a test computed `hits_before_confirm`, never read it, and its
+      # only surviving assertion was one BOTH the pass and fail states satisfy.
+      # CodeRabbit caught that by hand; a linter catches it for free.
+      #
+      # F,B are the correctness tiers (undefined names, unused imports, real
+      # bug patterns). PLE and RET joined them once measured at zero backlog --
+      # PLE is pylint's error tier, so a finding there is a bug rather than a
+      # preference. Style tiers are still deliberately NOT selected: PT018 and
+      # E501 carry three-figure backlogs and would land this red on arrival,
+      # training everyone to --no-verify -- the same failure the shellcheck
+      # note below describes. Widen only with a commit that also fixes the
+      # backlog AND moves the matching CI step.
+      #
+      # Count a tier with `ruff check --select <tier> --statistics`, never a
+      # grep: ruff 0.16 moved the path onto a `--> path:line:col` line, so a
+      # grep anchored on the old `path:line:col:` format reports 0 for every
+      # tier and makes a widening look free.
+      - id: ruff
+        name: ruff (correctness tiers F,B,PLE,RET,RUF059)
+        entry: ruff check --force-exclude --select F,B,PLE,RET,RUF059
+        language: system
+        files: '^ci/.*\.py$'
+        pass_filenames: true
+
       # CI workflows are code that breaks silently; actionlint catches bad if:
       # expressions, unknown contexts and shell errors inside run: blocks.
       #
-      # -config-file: declares our self-hosted-runner labels explicitly
-      # rather than relying on actionlint finding
-      # .github/actionlint.yaml by cwd-guessing -- pre-commit hooks don't
-      # guarantee cwd the way a bare `actionlint` invocation from a shell does.
+      # -config-file: declares this repo's self-hosted runner labels explicitly
+      # rather than relying on actionlint finding .github/actionlint.yaml by
+      # cwd-guessing -- pre-commit hooks do not guarantee cwd the way a bare
+      # `actionlint` invocation from a shell does.
       #
       # -ignore runner-label: actionlint 1.7.7 ships a FIXED list of GitHub
       # *hosted* runner images and flags anything newer as "unknown label".
-      # That's a different gap than the self-hosted labels above -- there's no
-      # config-file section for "GitHub-hosted images this actionlint release
-      # doesn't know yet" -- so this stays even with the config file wired in.
-      # Several repos legitimately target ubuntu-26.04 / ubuntu-26.04-arm,
-      # which that version has never heard of. Every such report is a false
-      # positive about the linter's age, not the workflow, and leaving it on
-      # lands this hook red on arrival. Drop this ignore once actionlint is
-      # new enough.
+      # A config file cannot fix this one: its label list declares SELF-hosted
+      # labels, and there is no section for "GitHub-hosted images this
+      # actionlint release does not know yet". So this ignore is needed either
+      # way. Several
+      # repos legitimately target ubuntu-26.04 / ubuntu-26.04-arm, which that
+      # version has never heard of. Every such report is a false positive about
+      # the linter's age, not the workflow, and leaving it on lands this hook
+      # red on arrival. Drop this ignore once actionlint is new enough.
       #
       # SHELLCHECK_OPTS applies to the shellcheck actionlint runs over `run:`
       # blocks. Without it that embedded pass reports at INFO while the
