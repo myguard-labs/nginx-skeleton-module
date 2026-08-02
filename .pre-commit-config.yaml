@@ -167,8 +167,14 @@ repos:
         pass_filenames: true
         require_serial: true
 
-      # Mirrors the CI "Static analysis" step in build-test.yml, same enable
-      # set and same suppressions.
+      # Mirrors the CI "Static analysis" step in build-test.yml: same enable
+      # set, same suppressions, same -I. Any of those diverging makes local
+      # green stop predicting remote green, which is this file's whole job.
+      #
+      # unusedStructMember is suppressed because cppcheck sees one TU at a
+      # time here and cannot know a member is read from another file; -I is
+      # the C source dir, so headers next to the sources resolve rather than
+      # being reported as missing.
       #
       # -DNGX_PTR_SIZE=8: the breaker probe-word layout selects on this macro
       # and #errors when it is undefined. It normally arrives from nginx's
@@ -183,7 +189,7 @@ repos:
         entry: cppcheck --enable=warning,performance,portability
                --error-exitcode=1 --suppress=missingIncludeSystem
                --suppress=normalCheckLevelMaxBranches --suppress=unusedFunction
-               -DNGX_PTR_SIZE=8
+               --suppress=unusedStructMember -I src -DNGX_PTR_SIZE=8
         language: system
         files: '^src/.*\.[ch]$'
         pass_filenames: true
