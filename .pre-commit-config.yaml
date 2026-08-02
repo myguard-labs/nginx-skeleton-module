@@ -73,9 +73,9 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
         args: [--maxkb=512]
-      # Test vectors are not secrets. autocert's tests/unit/test_crypto.c and
-      # test_alpn.c carry locked PEM fixtures (an elided MIGH... blob and a
-      # documented P-256 vector); gating on those is a pure false positive,
+      # Test vectors are not secrets. A derived module's unit tests can carry
+      # locked PEM fixtures (an elided MIGH... blob, a documented P-256
+      # vector); gating on those is a pure false positive,
       # while the hook still guards every real path.
       - id: detect-private-key
         exclude: '^tests?/'
@@ -121,8 +121,8 @@ repos:
       # CI workflows are code that breaks silently; actionlint catches bad if:
       # expressions, unknown contexts and shell errors inside run: blocks.
       #
-      # -config-file: declares our self-hosted-runner labels (builder02, lxc,
-      # b02lxc, docker) explicitly rather than relying on actionlint finding
+      # -config-file: declares our self-hosted-runner labels explicitly
+      # rather than relying on actionlint finding
       # .github/actionlint.yaml by cwd-guessing -- pre-commit hooks don't
       # guarantee cwd the way a bare `actionlint` invocation from a shell does.
       #
@@ -154,8 +154,8 @@ repos:
       # which just teaches everyone to --no-verify.
       #
       # NOTE some repos have pre-existing warning-level findings in build/test
-      # scripts (cache-turbo ci/tests/unit/extract_shm.sh SC2043,
-      # http-sentinel fuzz/build.sh SC2010, coraza-nginx build.sh SC2089/2090).
+      # scripts (SC2043 in a unit-test helper, SC2010 in a fuzz build script,
+      # SC2089/2090 in a package build script, all seen in derived modules).
       # They do NOT block normal work, because a commit hook only ever sees the
       # files being committed -- they surface on `pre-commit run --all-files`.
       # They are real and worth fixing; they are deliberately NOT suppressed

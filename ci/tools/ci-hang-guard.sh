@@ -39,7 +39,7 @@
 # the only chance to see a stack. Without this wrapper that chance is spent.
 #
 # SCOPE, and why it matters more here than it looks: the process scan is
-# restricted to the tree rooted at the wrapped command. builder02 runs six
+# restricted to the tree rooted at the wrapped command. The build host runs six
 # ephemeral CI slots at once, so a scan by process NAME would attach gdb to a
 # NEIGHBOURING job's nginx and publish its backtrace and its config paths into
 # this job's artifact -- an information leak between unrelated runs (CWE-200),

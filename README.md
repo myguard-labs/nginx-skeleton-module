@@ -71,7 +71,9 @@ ci/                        everything that only exists to test/build the module
     selftest.sh            negative controls for the gate itself
     fixtures/policy/       trees the policy checks must go RED on
   PROMPT-standardize-module.md  prompt: first-time bring-up of an existing
-                                module (see also: syncing, below)
+                                module (eight phases, eight PRs)
+  PROMPT-sync-module.md         prompt: forward ONE skeleton change into an
+                                already-standardised module
 .githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
 .github/workflows/         the CI workflows, see below
 ```
@@ -198,7 +200,7 @@ Each of these is a bug that shipped, or a red that wasted a session, in a real
 module here. Change them only on purpose.
 
 **`TEST_NGINX_TIMEOUT: "20"`** — Test::Nginx's client read timeout defaults to
-~2s. On the shared `builder02` LXC a live request under normal build-host load
+~2s. On a shared self-hosted LXC runner a live request under normal build-host load
 routinely takes longer, and the suite then fails as a *contiguous sweep of
 `client socket timed out` with zero assertion failures*. That shape means the
 harness, not the module. Export it locally too, or clean tests "fail".
@@ -277,16 +279,21 @@ permanently.
 
 ## Syncing skeleton changes into a derived module
 
-A module is cloned once and then drifts. This is the recurring half of that
-relationship — the *first* bring-up of an existing module is a different, much
-larger job and has its own document:
-**[ci/PROMPT-standardize-module.md](ci/PROMPT-standardize-module.md)**.
+A module is cloned once and then drifts. Forwarding one improvement back into
+it is a recurring job with its own prompt:
+**[ci/PROMPT-sync-module.md](ci/PROMPT-sync-module.md)** — copy it into a fresh
+session, replace `<TARGET>` and `<CHANGE>`, run it. It carries the full
+checklist: anchor resolution, the drift classes with their mechanisms, the
+probe shapes, and what to record afterwards.
 
-Use that prompt when the target has never been standardised (no `ci/` layout, no
-`ci.yml` orchestrator, no `ci/linter/`). Use the list below when the target is
-already on the standard and you are forwarding a specific improvement.
+The *first* bring-up of a module that has never been standardised is a
+different, much larger job — eight phases, eight PRs — and has its own document:
+**[ci/PROMPT-standardize-module.md](ci/PROMPT-standardize-module.md)**. Tell
+which you need by whether the target has a `ci/` layout, `ci.yml` as its sole
+`pull_request` entry point, and `ci/linter/`.
 
-**Per module, one session, one repo:**
+The rest of this section is the human-facing summary of the sync prompt. One
+module, one session, one repo:
 
 - **Establish the anchor.** Whatever the target last took from here — a
   `CHANGES` entry, a `vN` tag, or the merge commit of its standardisation PR.
@@ -305,10 +312,17 @@ already on the standard and you are forwarding a specific improvement.
   - a job that binds test ports without its own declared band. Presence of
     `TEST_NGINX_PORT` is not the check — the check is a **distinct job-level
     band**, verified free with `ci/tools/max-port.sh` before anything binds it.
-    Test::Nginx's default 1984 is unarbitrated and `builder02` runs six slots
-    against one network, so the collision reads as a module regression
-    (`bind() … Address already in use`). Note the reference itself currently
-    runs that verification before the *runtime* suite only, not before `prove`.
+    Test::Nginx's default 1984 is unarbitrated and a self-hosted host runs
+    several runner slots against one network, so the collision reads as a
+    module regression (`bind() … Address already in use`). **Do not copy this
+    repo's step order:** in `build-test.yml` the `Verify this job's port band is
+    free` step sits *after* `Run ci/t/`, so `prove` binds the band unverified
+    and the one failure `max-port.sh` exists to name still arrives as an
+    unattributed bind error or timeout. The verify step belongs above the first
+    step that binds. Order it correctly in the target and move on — reordering
+    it *here* is a workflow change with its own CI run, so it belongs in its own
+    PR against this repo, not in a sync PR. Open row in the mirror's
+    `issues.md`.
   - `--gcov-object-directory` in `ci/tools/coverage.sh`. The condition is the
     **gcovr major version the job actually runs**, not whether the pin exists:
     the `--gcov-`-prefixed spelling arrived in gcovr 7.0 and fails argparse
@@ -324,6 +338,17 @@ already on the standard and you are forwarding a specific improvement.
 
   The last two only exist in a module that already took those files; the first
   two apply to any module that runs `prove` or reports coverage.
+
+  **What a survey of the derived modules found, 2026-08-01 — nine targets,
+  read-only:** not one carried a `.github/versions.env` or a
+  `ci/linter/workflow_policy.py`, so drift classes 3 and 4 could not exist in
+  any of them. Those files arrive *with* the rollout, which makes the version
+  you hand over the one that has to be correct — a different job from auditing
+  what is already there. Seven of the nine ran `prove` on a self-hosted label
+  with no `TEST_NGINX_PORT` at all; of the remaining two, one picked a free port
+  from its own test driver and one had no `prove` workflow. The coverage option
+  turned up in a single module and was not breaking there. Counts, not a
+  standing fact: re-derive against the targets you actually have.
 - **Verify the gate red.** A gate you moved but never saw fail is a gate you did
   not verify. State the probe in the PR body.
 - **Remote CI green before merge**, then squash, delete the branch, and bump the

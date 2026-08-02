@@ -9,7 +9,7 @@
 # `runners`); this wrapper exists so run-all.sh picks the check up by glob and
 # LINT_ONLY=ci-runners selects it, like every other checker here.
 #
-# Why it is a GATE and not advice: builder02's runners are persistent and shared
+# Why it is a GATE and not advice: the self-hosted runners are persistent and shared
 # with the Debian package builds. A pull_request-triggered job executes scripts
 # from the PR head, so one workflow missing the fork fallback hands an arbitrary
 # contributor code execution on the build host. This is a public template repo;

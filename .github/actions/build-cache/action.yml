@@ -21,7 +21,7 @@ runs:
   using: composite
   steps:
     # Why hybrid:
-    #   The builder02 runners are persistent incus containers today, so
+    #   The self-hosted runners are persistent incus containers today, so
     #   ~/.cache/ccache and .build/ survive between jobs on disk -- the fastest
     #   possible cache, with no upload/download at all. But that is a property
     #   of the CURRENT runner topology, not a guarantee: an ephemeral
@@ -104,7 +104,7 @@ runs:
     # failure the caching rules forbid. So the only honest saving is not
     # reinstalling what is already there, and this step already did that
     # before eatmydata joined the list: `apt-get` runs only when `need` is
-    # non-empty, which on builder02 (persistent self-hosted) is the first run
+    # non-empty, which on a persistent self-hosted runner is the first run
     # and no other. On a hosted or freshly-rotated ephemeral runner it falls
     # through to install, same as before -- the fix for THAT case is a
     # pre-baked runner image, not a cache bolted on here.
@@ -118,7 +118,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        # Present on the builder02 runners already. The install path is for a
+        # Present on the self-hosted runners already. The install path is for a
         # hosted runner, which every consumer of this action reaches the same
         # way: `runs-on` falls back to ubuntu-latest when
         # github.event.pull_request.head.repo.fork is true. (codeql.yml is not

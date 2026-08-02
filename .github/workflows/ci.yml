@@ -2,10 +2,10 @@ name: CI
 
 # Single entry point for the PR suite. The seven checks below used to be
 # independent workflows, each with its own push/pull_request trigger, so a PR
-# asked for all of them at once. On the builder02 runners that is the wrong
+# asked for all of them at once. On the self-hosted runners that is the wrong
 # shape: CI wall-clock here is dominated by jobs QUEUEING for a label-matching
 # slot, not by the jobs themselves, so ten simultaneous requests just means the
-# tail waits. builder02 has SIX ephemeral slots (ci-ephemeral@runner-01..04,
+# tail waits. The build host has SIX ephemeral slots (ci-ephemeral@runner-01..04,
 # @docker-01..02); everything below is shaped around that number.
 #
 # The self-hosted work is arranged as three lanes. A lane starts with its
@@ -23,7 +23,7 @@ name: CI
 # RUNS of the same tree, runs 30591711577 (head 1b6d094, 286s) and 30592009272
 # (head 0a3ddcf, 280s), which differ only by a comment. Lane B finished 54s
 # ahead of Fuzzing in the first and 1s ahead in the second; Security scanners
-# alone read 47s and then 94s. builder02 also runs the package builds, so a job
+# alone read 47s and then 94s. The build host also runs unrelated package builds, so a job
 # here is timed against whatever else the box is doing -- one sample tells you
 # nothing, which is why the earlier "~59s of headroom" claim in this header was
 # wrong the day after it was measured.

@@ -34,7 +34,7 @@
  * in this repo runs amd64, where size_t is 8 bytes and char is signed.
  *
  * Two non-amd64 legs used to exist and both were removed on 2026-08-01 (see
- * memory issues.md). qemu-s390x never once reached this code: builder02's
+ * memory issues.md). qemu-s390x never once reached this code: the build host's
  * runner slots cannot emulate s390x. -m32 did work; it went on the same call.
  *
  * Three separate properties went with them, and they are worth keeping apart --

@@ -34,7 +34,7 @@ Usage:
 --port is the BASE of a 64-wide band this run owns end to end. Today exactly one
 CI job starts this driver (build-test.yml's Test::Nginx job, band 19200), so the
 band is not yet load-bearing -- it is the SECOND job that makes it so, and that
-is the point. builder02's workflows pin the same runner with disjoint
+is the point. The workflows here pin the same runner with disjoint
 concurrency groups, so nothing serialises them: a second runtime job added later
 without its own band would take this default, bind the same port as the first,
 and produce two unrelated-looking reds from one cause. ci/linter/lint-ci-ports.sh
