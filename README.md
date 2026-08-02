@@ -307,8 +307,12 @@ already on the standard and you are forwarding a specific improvement.
     band**, verified free with `ci/tools/max-port.sh` before anything binds it.
     Test::Nginx's default 1984 is unarbitrated and `builder02` runs six slots
     against one network, so the collision reads as a module regression
-    (`bind() … Address already in use`). Note the reference itself currently
-    runs that verification before the *runtime* suite only, not before `prove`.
+    (`bind() … Address already in use`). **Do not copy this repo's step order:**
+    in `build-test.yml` the `Verify this job's port band is free` step sits
+    *after* `Run ci/t/`, so `prove` binds the band unverified and the one failure
+    `max-port.sh` exists to name still arrives as an unattributed bind error or
+    timeout. The verify step belongs above the first step that binds. Open row in
+    the mirror's `issues.md`; a sync PR is a fine place to fix it here too.
   - `--gcov-object-directory` in `ci/tools/coverage.sh`. The condition is the
     **gcovr major version the job actually runs**, not whether the pin exists:
     the `--gcov-`-prefixed spelling arrived in gcovr 7.0 and fails argparse
@@ -324,6 +328,19 @@ already on the standard and you are forwarding a specific improvement.
 
   The last two only exist in a module that already took those files; the first
   two apply to any module that runs `prove` or reports coverage.
+
+  **Survey of the nine siblings, 2026-08-01 — read-only, not acted on:** no
+  sibling carries a `.github/versions.env` or a `ci/linter/workflow_policy.py`,
+  so drift classes 3 and 4 cannot exist in any of them yet — they arrive *with*
+  the rollout, and the version you hand over is the one that has to be correct.
+  The port band is live in **seven**: api-abuse, autocert, error-abuse,
+  sentinel, label-autoconf, strip-filter, http-zstd all run `prove` on
+  `[self-hosted, builder02, lxc]` with no `TEST_NGINX_PORT`. shield is immune
+  (`tools/run-tests.sh` picks a free port) and cache-turbo has no prove
+  workflow. `--gcov-object-directory` appears in cache-turbo only, not currently
+  breaking (builder02 has gcovr 7.2, the fork arm's ubuntu-latest 24.04 has
+  7.0). Re-derive before relying on this — it is a snapshot, and the sibling
+  repos are user-owned.
 - **Verify the gate red.** A gate you moved but never saw fail is a gate you did
   not verify. State the probe in the PR body.
 - **Remote CI green before merge**, then squash, delete the branch, and bump the
