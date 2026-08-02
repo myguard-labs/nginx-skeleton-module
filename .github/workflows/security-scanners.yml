@@ -87,18 +87,31 @@ jobs:
           mode: module
           nginx-version: ${{ env.NGINX_VERSION }}
 
-      # NO_CACHE=1 is load-bearing, not belt-and-braces. bear records compiler
-      # invocations as they happen, so it can only capture a compile that
-      # actually runs: against a warm build tree `make modules` reports
-      # "Nothing to be done" and bear writes a VALID, EMPTY [] database.
+      # Dropping the addon objects is load-bearing, not belt-and-braces. bear
+      # records compiler invocations as they happen, so it can only capture a
+      # compile that actually runs: against a warm build tree `make modules`
+      # reports "Nothing to be done" and bear writes a VALID, EMPTY [] database.
       # clang-tidy -p then finds no entry for any file, analyzes nothing, and
       # exits 0 -- a green gate that checked zero lines. Measured: warm tree ->
-      # 0 entries, cold tree -> 3. The db-size assertion below is the backstop;
-      # this flag is what makes it hold.
+      # 0 entries, forced recompile -> 3. The db assertion below is the backstop;
+      # this rm is what makes it hold.
+      #
+      # Only objs/addon (this module's three objects) is removed, NOT the tree.
+      # NO_CACHE=1 would also work and is the obvious knob, but it deletes the
+      # whole build tree AND disables ccache (ci-build.sh:191, :248), so the
+      # scanner job would do a full cold nginx build on every PR and the cache
+      # restore above it would be dead weight. This recompiles three files
+      # against an otherwise warm tree.
       - name: Build module, capturing the real compile flags (bear)
-        env:
-          NO_CACHE: 1
-        run: bear --output compile_commands.json -- bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" module
+        run: |
+          set -euo pipefail
+          N="$GITHUB_WORKSPACE/.build/nginx-${NGINX_VERSION}-module"
+          # Glob, not the module name: rename-module.sh rewrites `skel`
+          # everywhere, and a workflow that missed the rename would silently go
+          # back to capturing nothing.
+          rm -rf "$N/objs/addon" "$N"/objs/*.so
+          bear --output compile_commands.json -- \
+            bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" module
 
       # A compilation database that silently loses its entries turns every
       # downstream check into a no-op, so assert the shape before trusting it:
