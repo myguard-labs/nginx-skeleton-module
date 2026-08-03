@@ -16,7 +16,9 @@ repo write access; reads as a checklist for a human.
 
 Give the target the reference's **layout, gates, workflow set, badge row, linter
 entry point and conventions**, expressed over the target's own code and tests.
-Ten checkpoints, one PR each, grouped into five phases:
+Eleven checkpoints (0–10) grouped into six phases; each lands one PR, except
+checkpoint 0, which is read-only. Phases −1 and 4 carry no checkpoint — they are
+the preconditions you read first and the close-out you finish with:
 
 | Phase | Checkpoints | What it is |
 |---|---|---|
@@ -73,8 +75,9 @@ Standing constraints, all checkpoints:
 
 # Phase −1 — Before you touch anything
 
-Ten PRs against someone's live repo. These are preconditions, not advice: if one
-cannot be satisfied, stop and report rather than working around it.
+Ten PRs against someone's live repo — checkpoints 1–10; checkpoint 0 is read-only
+and lands nothing. These are preconditions, not advice: if one cannot be
+satisfied, stop and report rather than working around it.
 
 ## Scope
 
@@ -858,7 +861,7 @@ the question is whether it would catch anything.
 
 ## 10 — Depth pass: is each gate as strong as it looks?
 
-Run this **after all nine checkpoints have merged**, as its own PR or a short
+Run this **after checkpoints 0–9 have merged**, as its own PR or a short
 series. Everything here is about a gate that is already green: the question is
 not "does it run" but "would it catch anything". A soak that never reaches the
 handler, a fuzzer driving a reimplementation and a coverage number computed over
@@ -1016,9 +1019,9 @@ has become a no-op reports the same clean line as one that passes.
   at once and confirm both appear and both are named in the `== FAIL:` line.
 - **`semgrep` first.** `--jobs=1` and `--metrics=off` are exactly the flags that
   can silently turn it into a no-op, so its probe must still fire. `--jobs=1` is a
-  correctness flag, not a speed one — see 6b.
+  correctness flag, not a speed one — see 7b.
 - **`zizmor` findings drift with the workflow set.** Every workflow added since
-  6b is new attack surface it now audits. Confirm the count of audited workflows
+  7b is new attack surface it now audits. Confirm the count of audited workflows
   matches the count in `.github/workflows/`, and that each `# zizmor: ignore[rule]`
   still names a reason that is still true. A suppression outlives the thing it
   suppressed.

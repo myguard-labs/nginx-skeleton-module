@@ -331,8 +331,10 @@ point as the hook, so a clone that never enabled `core.hooksPath` still cannot
 land a regression. **That string is duplicated here and in `lint.yml`, and
 nothing cross-checks the two**: a checker added to one and not the other runs in
 only one place, silently. Edit both in the same commit, and note that a derived
-module's list will legitimately differ from this one. It is wired into the `ci.yml` orchestrator and runs on
-`ubuntu-latest`, taking no self-hosted slot.
+module's list will legitimately differ from this one.
+
+`lint.yml` is wired into the `ci.yml` orchestrator and runs on `ubuntu-latest`,
+taking no self-hosted slot.
 
 The `c` checker is left out there because `security-scanners.yml` already runs
 flawfinder/clang-tidy/semgrep over `src/` at the same thresholds. That is also
