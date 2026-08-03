@@ -8,7 +8,7 @@
 #   bash fuzz/build.sh clean    # remove built binaries
 #
 # Needs clang with -fsanitize=fuzzer. The nginx source tree must already be at
-# .build/nginx-<VER>/ (run tools/ci-build.sh first): the target links nginx's
+# .build/nginx-<VER>/ (run ci/tools/ci-build.sh first): the target links nginx's
 # real ngx_unescape_uri()/ngx_strlcasestrn() out of src/core/ngx_string.c, so
 # the decoder and matcher under test are production code, not stubs.
 

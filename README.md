@@ -16,7 +16,7 @@ It's a working nginx dynamic HTTP module plus the CI harness that the modules
 in this org converged on — the build, the tests, the fuzzer and the workflows
 are already wired.
 
-The point of the skeleton is not the ~350 lines of C. It is that the *gates* are
+The point of the skeleton is not the ~1000 lines of C. It is that the *gates* are
 already correct: the traps below took several modules and several red-herring CI
 reds to discover, and they are baked in here so the next module starts past them.
 
@@ -33,7 +33,7 @@ rm -rf .git && git init
 
 ci/tools/rename-module.sh foo      # skel -> foo everywhere, then delete the script
 
-bash ci/tools/ci-build.sh nginx 1.31.2
+bash ci/tools/ci-build.sh nginx 1.31.3
 TEST_NGINX_TIMEOUT=20 prove -v ci/t/
 ```
 
@@ -52,7 +52,7 @@ ci/                        everything that only exists to test/build the module
   tests/unit/              C unit tests of the scan core — no nginx, no network
     test_scan.c            boundary values: the cap, the seam, the hold window
     run.sh                 build (-Werror) + run; CC="gcc -m32" for a 32-bit check
-  fuzz/                    libFuzzer target + dict + seed corpus + regressions/
+  fuzz/                    libFuzzer targets (scan, body) + dict + corpus + regressions/
   vendor/nginx-tests/      upstream nginx/nginx-tests submodule (lib/Test/Nginx.pm)
   tools/
     ci-build.sh            build nginx|angie × debug|asan|module|coverage
@@ -64,6 +64,10 @@ ci/                        everything that only exists to test/build the module
     soak.sh                sustained matching/benign storm under valgrind/ASan
     valgrind.supp          nginx-core-only suppressions
     rename-module.sh       skel -> your name (delete after use)
+    versions-env.sh        validate-then-source .github/versions.env
+    bump-versions.sh       refresh every upstream pin; what bump.yml runs
+    bump-actions.sh        move `uses:` sha pins to the tag's newest release
+    bump-tools.sh          move the pinned PyPI linter versions, in every file
   linter/                  local lint gate, mirrors the CI thresholds
     run-all.sh             every checker; what the pre-commit hook runs
     install-linters.sh     apt-get -> pipx -> cpan -> upstream binary
@@ -71,9 +75,13 @@ ci/                        everything that only exists to test/build the module
     selftest.sh            negative controls for the gate itself
     fixtures/policy/       trees the policy checks must go RED on
   PROMPT.md                     adopt this standard in another module:
-                                eight checkpoints, one PR each
+                                eleven checkpoints in six phases
 .githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
-.github/workflows/         the CI workflows, see below
+.github/
+  versions.env             version + sha256 pins, single source of truth
+  scripts/                 load/compute/verify the pins
+  actions/build-cache/     composite action: restore the caches for one mode
+  workflows/               the CI workflows, see below
 ```
 
 ### Four test layers, and why each exists
@@ -83,7 +91,7 @@ ci/                        everything that only exists to test/build the module
 | `ci/tests/unit/` | no nginx, <1s | *what VALUE* does the scan core return at a named boundary — the cap, a piece seam, an open escape |
 | `ci/t/` (Test::Nginx) | live nginx, one request at a time | does the module wire into the request correctly — modes, statuses, inheritance |
 | `ci/tools/test_runtime.py` | live nginx, driven from outside | concurrency, the chunk seam through the real body handler, reload under load |
-| `ci/fuzz/` | libFuzzer | does it CRASH, and does split input agree with whole input, on bytes nobody wrote by hand |
+| `ci/fuzz/` | libFuzzer, two targets | does it CRASH, and does split input agree with whole input, on bytes nobody wrote by hand |
 
 A fuzzer asserts invariants, not values; Test::Nginx cannot address a buffer
 boundary; the unit tests cannot see nginx's chain buffers. Each layer covers what
@@ -141,7 +149,7 @@ lane map and its measured durations live in `ci.yml`'s header comment.
 | `asan.yml` | PR (via `ci.yml`, path-gated: `src/` + build/soak harness) | 60s ASan/UBSan request-storm soak (static `--add-module`) |
 | `fuzzing.yml` | PR (via `ci.yml`) | replay every past crash, then 120s fresh fuzz |
 | `valgrind.yml` | PR (via `ci.yml`) | 60s memcheck soak |
-| `security-scanners.yml` | PR (via `ci.yml`) | flawfinder (≥4 blocks), clang-tidy (blocks), semgrep (advisory) |
+| `security-scanners.yml` | PR (via `ci.yml`) | flawfinder (≥4 blocks), clang-tidy (blocks), semgrep (blocks at ≥WARNING; INFO advisory) |
 | `codeql.yml` | PR (via `ci.yml`) + monthly | CodeQL, **module TU only** |
 | `ci-deep.yml` | monthly + dispatch | 4h fuzz, 600s memcheck, 600s helgrind, **nginx mainline+stable+angie build & test matrix**, **coverage report** (a report, never a gate) |
 | `bump.yml` | weekly + dispatch | checks nginx.org/angie.software for newer pins, updates `ci/vendor/nginx-tests` submodule, commits+pushes to main if anything moved |
@@ -285,11 +293,15 @@ Read /opt/myguard/labs/nginx-skeleton-module/ci/PROMPT.md and apply it to
 /path/to/nginx-<name>-module.
 ```
 
-Eight checkpoints, one PR each: inventory, the `ci/` layout, runner identity,
-workflows + badges + a single entry point, the four test layers, fuzzing,
-caching + the linter gate, lanes, and self-hosted exposure. Checkpoint 0 works
-out how much of it the target already has, so you do not need to know in advance
-whether this is a first adoption or a top-up.
+Eleven checkpoints in six phases, one PR each after the read-only first:
+inventory, the decision seam, the `ci/` layout, runner identity, workflows +
+badges + a single entry point, the four test layers, fuzzing, caching + the
+linter gate, lanes, self-hosted exposure, and a final depth pass asking whether
+any of the now-green gates would actually catch anything. Two phases carry no
+checkpoint of their own: one ahead of all of them sets the scope jail and the
+stop conditions, and one at the end closes out the docs, the memory mirror and
+the report. Checkpoint 0 works out how much of it the target already has, so you
+do not need to know in advance whether this is a first adoption or a top-up.
 
 It is a **merge into whatever CI the target already has**, not a greenfield
 install — the target's tests, thresholds and extra gates survive; the layout,

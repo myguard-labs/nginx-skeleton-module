@@ -2,9 +2,9 @@
 #
 # Build nginx (or angie) with the module, for local dev and CI.
 #
-#   tools/ci-build.sh [flavor] [version] [mode]
+#   ci/tools/ci-build.sh [flavor] [version] [mode]
 #     flavor : nginx (default) | angie
-#     version: source version, e.g. 1.31.2
+#     version: source version, e.g. 1.31.3
 #     mode   : debug (default, dynamic .so) | asan (static, sanitizers)
 #              | module (dynamic .so only, nginx core NOT compiled)
 #              | coverage (dynamic .so, gcov-instrumented, -O0)

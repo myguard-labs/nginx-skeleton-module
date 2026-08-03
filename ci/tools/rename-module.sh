@@ -2,11 +2,11 @@
 #
 # Turn this skeleton into a real module.
 #
-#   tools/rename-module.sh <name>
+#   ci/tools/rename-module.sh <name>
 #
 # <name> is the bare module name, lowercase, no prefix/suffix:
 #
-#   tools/rename-module.sh ratelimit
+#   ci/tools/rename-module.sh ratelimit
 #     -> ngx_http_ratelimit_module, directives `ratelimit`, `ratelimit_status`,
 #        src/ngx_http_ratelimit_module.c, NGX_HTTP_RATELIMIT_* macros
 #
@@ -22,7 +22,7 @@ set -euo pipefail
 NAME="${1:-}"
 
 if [ -z "$NAME" ]; then
-    echo "usage: tools/rename-module.sh <name>   (e.g. ratelimit)" >&2
+    echo "usage: ci/tools/rename-module.sh <name>   (e.g. ratelimit)" >&2
     exit 2
 fi
 
@@ -105,9 +105,9 @@ echo
 echo "done. ngx_http_${NAME}_module"
 echo
 echo "Next:"
-echo "  1. rm tools/rename-module.sh          # scaffolding, not part of the module"
+echo "  1. rm ci/tools/rename-module.sh       # scaffolding, not part of the module"
 echo "  2. edit src/ngx_http_${NAME}_scan.c   # replace the rule table / matching logic"
-echo "  3. edit ci/t/03-fp-negative.t            # a negative per rule, same commit"
-echo "  4. bash tools/ci-build.sh nginx 1.31.2"
+echo "  3. edit ci/t/03-fp-negative.t         # a negative per rule, same commit"
+echo "  4. bash ci/tools/ci-build.sh nginx 1.31.3"
 echo "  5. TEST_NGINX_TIMEOUT=20 prove -v ci/t/"
 echo "  6. update README.md (name, directives, what it actually does)"

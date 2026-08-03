@@ -16,13 +16,13 @@
 # a no-op.
 #
 # Usage:
-#   tools/soak.sh <nginx-binary> [duration_seconds] [concurrency]
-#   USE_VALGRIND=1 tools/soak.sh <nginx-binary> 600 4
-#   USE_HELGRIND=1 tools/soak.sh <nginx-binary> 600 4
+#   ci/tools/soak.sh <nginx-binary> [duration_seconds] [concurrency]
+#   USE_VALGRIND=1 ci/tools/soak.sh <nginx-binary> 600 4
+#   USE_HELGRIND=1 ci/tools/soak.sh <nginx-binary> 600 4
 #
 # Build first -- ASan for the sanitizer path, plain debug for valgrind:
-#   CC=clang bash tools/ci-build.sh nginx 1.31.2 asan
-#   bash tools/ci-build.sh nginx 1.31.2 debug
+#   CC=clang bash ci/tools/ci-build.sh nginx 1.31.3 asan
+#   bash ci/tools/ci-build.sh nginx 1.31.3 debug
 
 set -euo pipefail
 
