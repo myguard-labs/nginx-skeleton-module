@@ -181,8 +181,9 @@ for consistency, it's intentional.
 On the skeleton itself the win is small and honestly stated: a cold build is ~7s
 (≈5s of *serial* `configure`, ≈2s of compile across 127 objects on 32 cores), and
 a warm one is ~0s. **Caching is not why the PR gate is fast** — the gate is
-fuzz-bound, not build-bound, and its two slowest jobs are *time-boxed by design*
-(120s fuzz, 60s memcheck soak), so no cache can shorten them by a second. The
+fuzz-bound, not build-bound. The fuzz workload and the memcheck soak are
+*time-boxed by design* at 120s and 60s, and no cache can shorten those fixed
+portions by a second. The
 measured lane durations live in `ci.yml`'s header comment, which is the only
 place they are recorded; do not restate a total here, it drifts.
 
