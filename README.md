@@ -70,10 +70,8 @@ ci/                        everything that only exists to test/build the module
     workflow_policy.py     repo-policy checks over .github/workflows/
     selftest.sh            negative controls for the gate itself
     fixtures/policy/       trees the policy checks must go RED on
-  PROMPT-standardize-module.md  prompt: first-time bring-up of an existing
-                                module (eight phases, eight PRs)
-  PROMPT-sync-module.md         prompt: forward ONE skeleton change into an
-                                already-standardised module
+  PROMPT.md                     adopt this standard in another module:
+                                eight checkpoints, one PR each
 .githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
 .github/workflows/         the CI workflows, see below
 ```
@@ -277,85 +275,40 @@ vacuously.
 is nginx-core noise only. A suppression over module frames turns the gate green
 permanently.
 
-## Syncing skeleton changes into a derived module
+## Adopting this standard in another module
 
-A module is cloned once and then drifts. Forwarding one improvement back into
-it is a recurring job with its own prompt:
-**[ci/PROMPT-sync-module.md](ci/PROMPT-sync-module.md)** — copy it into a fresh
-session, replace `<TARGET>` and `<CHANGE>`, run it. It carries the full
-checklist: anchor resolution, the drift classes with their mechanisms, the
-probe shapes, and what to record afterwards.
+**[ci/PROMPT.md](ci/PROMPT.md).** Point a fresh session at it and a module path
+— nothing else:
 
-The *first* bring-up of a module that has never been standardised is a
-different, much larger job — eight phases, eight PRs — and has its own document:
-**[ci/PROMPT-standardize-module.md](ci/PROMPT-standardize-module.md)**. Tell
-which you need by whether the target has a `ci/` layout, `ci.yml` as its sole
-`pull_request` entry point, and `ci/linter/`.
+```text
+Read /opt/myguard/labs/nginx-skeleton-module/ci/PROMPT.md and apply it to
+/path/to/nginx-<name>-module.
+```
 
-The rest of this section is the human-facing summary of the sync prompt. One
-module, one session, one repo:
+Eight checkpoints, one PR each: inventory, the `ci/` layout, runner identity,
+workflows + badges + a single entry point, the four test layers, fuzzing,
+caching + the linter gate, lanes, and self-hosted exposure. Checkpoint 0 works
+out how much of it the target already has, so you do not need to know in advance
+whether this is a first adoption or a top-up.
 
-- **Establish the anchor.** Whatever the target last took from here — a
-  `CHANGES` entry, a `vN` tag, or the merge commit of its standardisation PR.
-  Without an anchor you are guessing at scope. `git log --oneline <anchor>..HEAD`
-  in this repo is the candidate set; [CHANGES](CHANGES) says what each one was
-  *for*.
-- **Select, don't sweep.** Take one concern per PR. A sync PR carrying four
-  unrelated skeleton commits is not independently revertible and its CI failure
-  does not tell you which change broke it.
-- **Re-derive, never copy blind.** Every workflow here carries skeleton-specific
-  paths, file names, runner labels and version pins. A file copied verbatim
-  compiles, runs, and gates the wrong thing. The reference for what each gate
-  must *prove* is the Phase 2 table in the prompt.
-- **Check the four drift classes first** — none is visible from a green run,
-  each has bitten a module here:
-  - a job that binds test ports without its own declared band. Presence of
-    `TEST_NGINX_PORT` is not the check — the check is a **distinct job-level
-    band**, verified free with `ci/tools/max-port.sh` before anything binds it.
-    Test::Nginx's default 1984 is unarbitrated and a self-hosted host runs
-    several runner slots against one network, so the collision reads as a
-    module regression (`bind() … Address already in use`). The verify step
-    belongs above the **first** step that binds, not merely above the last one:
-    `build-test.yml` ran it between `Run ci/t/` and the runtime suite until
-    2026-08-02, which left `prove` binding unverified and turned the one failure
-    `max-port.sh` exists to name back into an unattributed bind error.
-  - `--gcov-object-directory` in `ci/tools/coverage.sh`. The condition is the
-    **gcovr major version the job actually runs**, not whether the pin exists:
-    the `--gcov-`-prefixed spelling arrived in gcovr 7.0 and fails argparse
-    below it. `--object-directory` is accepted by both and is the portable
-    choice for a target whose runner gcovr you do not control — the fork arm's
-    `ubuntu-latest`.
-  - a `.github/versions.env` consumer that sources the file without validating
-    it executes any line that is not a pin.
-  - `ci/linter/workflow_policy.py` older than the YAML-parse rewrite matches
-    workflow YAML with regexes, and valid YAML (`.yaml` extension, inline
-    `on: [pull_request]`, a comment after a job key) makes all three policy
-    checks silently vacuous.
+It is a **merge into whatever CI the target already has**, not a greenfield
+install — the target's tests, thresholds and extra gates survive; the layout,
+ordering, naming and entry points become the standard's. A final section covers
+the inverse job once a module is fully adopted: forwarding one later skeleton
+change into it.
 
-  The last two only exist in a module that already took those files; the first
-  two apply to any module that runs `prove` or reports coverage.
+**Settle the runner question first** (checkpoint 2 of the prompt). These
+workflows name `builder02`, a machine myguard owns, in 15 `runs-on` selectors
+plus `.github/actionlint.yaml` and `TRUST_SPLITS` in `workflow_policy.py` — and
+**no linter in this repo will tell an adopter they copied it**: actionlint
+validates labels for a literal `runs-on` only, and every selector here is a
+`fromJSON(...)` ternary it stays silent on. If you do not own the pool, every
+job is `ubuntu-latest` and the fork ternary is deleted.
 
-  **What a survey of the derived modules found, 2026-08-01 — nine targets,
-  read-only:** not one carried a `.github/versions.env` or a
-  `ci/linter/workflow_policy.py`, so drift classes 3 and 4 could not exist in
-  any of them. Those files arrive *with* the rollout, which makes the version
-  you hand over the one that has to be correct — a different job from auditing
-  what is already there. Seven of the nine ran `prove` on a self-hosted label
-  with no `TEST_NGINX_PORT` at all; of the remaining two, one picked a free port
-  from its own test driver and one had no `prove` workflow. The coverage option
-  turned up in a single module and was not breaking there. Counts, not a
-  standing fact: re-derive against the targets you actually have.
-- **Verify the gate red.** A gate you moved but never saw fail is a gate you did
-  not verify. State the probe in the PR body.
-- **Remote CI green before merge**, then squash, delete the branch, and bump the
-  superrepo gitlink for that checkout.
-- **Send improvements back.** A fix or a layer the target grew that this repo
-  lacks gets a PR *here*. The template is only worth keeping if it stays ahead
-  of its clones.
-
-Record the anchor you synced to in the target's memory mirror
-(`/opt/myguard/memory/labs/<module-name>/index.md`), or the next session
-re-derives it from scratch.
+Everything else — the drift classes, the probe shapes, anchor resolution, what
+to record in the target's memory mirror — is in
+**[ci/PROMPT.md](ci/PROMPT.md)**. It is deliberately the only copy; a summary
+here would be a second thing to keep in sync.
 
 ## Requirements
 

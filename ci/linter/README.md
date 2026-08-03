@@ -23,7 +23,7 @@ finding shellcheck could have named in two seconds. Every script is standalone;
 | `lib.sh` | — | sourced helpers (file selection, missing-tool failure) |
 | `workflow_policy.py` | — | the three repo-policy checks the `ci-*`/`docs-drift` wrappers call |
 | `selftest.sh` | — | negative controls for the gate itself; run before the linters in `lint.yml` |
-| `fixtures/policy/` | — | workflow trees the policy checks must go RED on, one per known bypass |
+| `fixtures/policy/` | — | trees the policy checks must go RED on — the known bypasses, plus the runner-label and step-ordering cases; `clean/` and the `-ok` trees must stay GREEN |
 
 Rule config lives at the repo root so editors and these scripts agree:
 `.yamllint` (workflow-shaped YAML), `.perlcriticrc` (Test::Nginx-shaped Perl).
@@ -326,9 +326,12 @@ Never a blanket disable in a `zizmor.yml`.
 ## In CI
 
 `.github/workflows/lint.yml` runs `install-linters.sh` then
-`LINT_ONLY="nginx sh python perl yaml ci-runners ci-ports docs-drift" run-all.sh` — the same entry point as
-the hook, so a clone that never enabled `core.hooksPath` still cannot land a
-regression. It is wired into the `ci.yml` orchestrator and runs on
+`LINT_ONLY="nginx sh python perl yaml spelling ci-runners ci-ports docs-drift" run-all.sh` — the same entry
+point as the hook, so a clone that never enabled `core.hooksPath` still cannot
+land a regression. **That string is duplicated here and in `lint.yml`, and
+nothing cross-checks the two**: a checker added to one and not the other runs in
+only one place, silently. Edit both in the same commit, and note that a derived
+module's list will legitimately differ from this one. It is wired into the `ci.yml` orchestrator and runs on
 `ubuntu-latest`, taking no self-hosted slot.
 
 The `c` checker is left out there because `security-scanners.yml` already runs
