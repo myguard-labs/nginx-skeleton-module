@@ -16,7 +16,19 @@ repo write access; reads as a checklist for a human.
 
 Give the target the reference's **layout, gates, workflow set, badge row, linter
 entry point and conventions**, expressed over the target's own code and tests.
-Eight checkpoints, below, one PR each.
+Ten checkpoints, one PR each, grouped into five phases:
+
+| Phase | Checkpoints | What it is |
+|---|---|---|
+| −1 | — | preconditions, scope jail, stop conditions — read first |
+| 0 | 0 | inventory and baseline, read-only |
+| 1 | 1 | the decision seam — the one C refactor |
+| 2 | 2–9 | adoption: layout, runners, entry point, tests, caching, lanes |
+| 3 | 10 | depth pass — would any of it catch anything? |
+| 4 | — | close out: docs, memory mirror, report |
+
+Checkpoints are numbered continuously and referenced by number throughout; the
+phases group them. Phase 3 runs only after every phase-2 checkpoint has merged.
 
 **This is a merge, not an install.** Assume the target already has CI somebody
 relies on. Measured across the eight derived modules on 2026-08-03: every one
@@ -35,7 +47,7 @@ Three rules outrank every checkpoint:
    the skeleton as a PR. A rollout that reduces coverage is a regression wearing
    a standardisation PR.
 3. **Nothing self-hosted is portable.** `builder02` is a myguard machine and no
-   linter here will tell an adopter they copied it. Checkpoint 2 settles it
+   linter here will tell an adopter they copied it. Checkpoint 3 settles it
    before any workflow is ported.
 
 Standing constraints, all checkpoints:
@@ -43,7 +55,8 @@ Standing constraints, all checkpoints:
 - **One PR per checkpoint**, in order, each independently revertible and
   independently green. Do not open the next until the previous merges — later
   ones move files the earlier ones edit.
-- **Remote CI green before merge.** No `[skip ci]`, no disabled workflows.
+- **Remote CI green before merge**, workflows enabled — see phase −1 on what you
+  may not do to get there.
 - **Every gate must be seen red once, in the target.** A probe run against the
   reference is not evidence about the target: different paths, files and
   thresholds. Record the probe and its output in the PR body.
@@ -58,6 +71,98 @@ Standing constraints, all checkpoints:
 
 ---
 
+# Phase −1 — Before you touch anything
+
+Ten PRs against someone's live repo. These are preconditions, not advice: if one
+cannot be satisfied, stop and report rather than working around it.
+
+## Scope
+
+**One repo is writable: `<TARGET>`.** This reference, sibling modules and
+`/opt/myguard/packages` are read-only for the whole job, memory mirrors included.
+Reading the reference is the point; committing to it is not.
+
+Two writes outside it are expected, and only these two:
+
+- **The target's own memory mirror**, `memory/labs/<name>/` or
+  `memory/eilandert/<name>/` — where the inventory, issues and lessons go.
+- **The superrepo gitlink**, once per merged checkpoint, if `<TARGET>` is a
+  myguard submodule. Submodule PR merges first, then the gitlink bump lands
+  signed on the superrepo's `master`. An external target has no gitlink and no
+  mirror; skip both and say so.
+
+Rule 2's upstream PR (a gate the target has and the skeleton lacks) is a
+**separate session** after the rollout, not a commit slipped in while here.
+- A dirty submodule or unrelated change in another tree is left exactly as
+  found. Do not commit it, revert it, or `git checkout` over it.
+- Writing to `memory/` for the target's own mirror is expected; writing to
+  another module's mirror is not.
+
+## Preconditions
+
+```sh
+cd <TARGET>
+git status --porcelain          # -> MUST be empty
+git rev-parse --abbrev-ref HEAD # note it; this is the base to branch from
+git remote -v                   # confirm you are where you think you are
+gh auth status                  # can you actually open a PR here?
+```
+
+- **Uncommitted changes → stop.** They are not yours; you do not know what they
+  were for. Ask. Never `git stash` to get a clean tree — a stash the user did not
+  ask for is data they cannot find later.
+- **Not a git repo, or no push access → stop and say so.** Do not initialise one,
+  do not fork as a workaround.
+- **The default branch is not a work surface.** Every checkpoint gets its own
+  branch off the current default, merged by PR. Nothing is committed straight to
+  `master`/`main`, including "trivial" doc fixes.
+
+## Git safety
+
+- **Never `push --force` to a shared branch**, and never to the default branch
+  under any circumstance. Rewriting a checkpoint branch you alone own, before
+  review, is the only acceptable case — and `--force-with-lease`, never `--force`.
+- **Never `git checkout .`, `git reset --hard`, or `git clean -fd`** to undo your
+  own mistake. They erase whatever else was in the tree. Revert the specific file.
+- **No secret ever enters a commit, a workflow, or a PR body** — no tokens, no
+  PATs, no `Bearer` strings, not even revoked ones. Reference via `${{ secrets.X }}`
+  or an env var. A workflow that needs a credential the target does not have is a
+  finding, not a thing to invent.
+- One checkpoint per branch, named for it. Delete the branch after merge.
+
+## Stop conditions
+
+Stop, report, and wait for a human on any of these. None is a judgement call:
+
+| Condition | Why |
+|---|---|
+| Target tree dirty at start | not your changes |
+| The same gate red twice for reasons you cannot explain | you are guessing |
+| A checkpoint needs a behavioural change to the module | out of scope by rule |
+| CI needs a secret or a runner the target lacks | cannot be invented |
+| A fix requires deleting or weakening an existing gate | rule 2 |
+| The target's tests were already red at baseline | fix ownership is unclear |
+| A write outside `<TARGET>`, its mirror or the gitlink seems necessary | scope jail |
+
+**Never disable a failing check to make a PR mergeable.** Not `[skip ci]`, not
+`continue-on-error`, not commenting out a step, not `gh workflow disable`, not
+lowering a threshold to the observed value. A red gate you cannot fix is a
+finding to report, and the honest end state of a checkpoint.
+
+## Rollback
+
+Each checkpoint is one PR precisely so it can be reverted alone. If a merged
+checkpoint turns out wrong, `git revert` the merge commit on its own branch and
+PR that — do not force-push over history that others have pulled, and do not
+"fix forward" by stacking a second broken change on the first.
+
+---
+
+# Phase 0 — Establish what you are working with
+
+Read-only. Decides whether there is a job at all, and sizes the one code change
+that everything downstream depends on.
+
 ## 0 — Inventory and baseline (no changes)
 
 ```bash
@@ -68,6 +173,8 @@ ls .github/workflows
 grep -lE '^\s*pull_request:' .github/workflows/*.yml | wc -l   # entry points
 grep -rn 'runs-on' .github/workflows/                    # whose machines?
 ls src 2>/dev/null || ls *.c *.h                         # C at root?
+ls src/*_scan.c src/*_scan.h *_scan.c 2>/dev/null        # decision seam? (cp 1)
+grep -ln 'ngx_http_request_t' src/*_scan.c *_scan.c 2>/dev/null  # expect no hits
 grep -nE '!\[' README.md                                 # badge row + order
 git log --oneline -10
 gh run list -R <owner>/<module> --limit 20 \
@@ -83,22 +190,24 @@ ones the target is missing.
 
 Do not infer the score from the first marker you check. Two derived modules have
 a `ci/` directory and still score 0/3 — `ci/` is the cheapest half of checkpoint
-1 and the most misleading signal in the set. **No `ci.yml` settles it on its
+2 and the most misleading signal in the set. **No `ci.yml` settles it on its
 own.**
 
 Record in the memory mirror (`/opt/myguard/memory/labs/<module-name>/index.md`
 for ours; an external target has no mirror — create one only if the work is
 ongoing):
 
-- current layout, and whether `src/` exists
+- current layout, whether `src/` exists, and **whether the decision seam exists**
+  (checkpoint 1). Absent or nominal is the largest code change in the job —
+  size it here, before planning anything downstream.
 - workflows in three buckets: **matches** a reference workflow by purpose,
   **missing**, and **extra** — one the reference has no equivalent for. The
   third bucket is what rule 2 protects and what gets lost otherwise.
 - **every `pull_request:` entry point by name** — that count is the size of the
-  checkpoint 3 demotion, the riskiest edit in the job
+  checkpoint 4 demotion, the riskiest edit in the job
 - whose runners it currently uses
 - **measured wall-clock per workflow** from `gh run list` — real numbers, needed
-  for checkpoint 7. Estimates are not acceptable there.
+  for checkpoint 8. Estimates are not acceptable there.
 - current coverage number, if any tooling exists (usually none)
 - gates it has that the reference lacks, and where they run
 
@@ -108,12 +217,98 @@ from the code.
 
 **Baseline the target green.** Run whatever suite it has and record the result.
 If it is already red, that is a finding for `issues.md` and a fact the first PR
-body must state — otherwise checkpoint 1 inherits blame for a failure that
+body must state — otherwise checkpoint 2 inherits blame for a failure that
 predates it.
 
 ---
 
-## 1 — Move CI material under `ci/`
+# Phase 1 — The decision seam
+
+One checkpoint, alone in its own phase because it is the only C refactor in the
+job and every later gate links across it. A target that already has a clean seam
+passes through in a single commit; one that does not cannot produce a meaningful
+unit or fuzz result until this lands.
+
+## 1 — The decision seam
+
+First, and before the `ci/` move — the extraction is a C refactor independent of
+where the test material lives, and everything downstream links across it. Own PR.
+
+> **Decision logic goes in `*_scan.c`, taking `(u_char *, size_t)`. Only
+> `ngx_http_request_t` plumbing stays in `*_module.c`.**
+
+This is the one structural rule, and it comes before the test layers because
+both of them link across it: `ci/tests/unit/test_scan.c` (checkpoint 5) and
+`ci/fuzz/fuzz_scan.c` (checkpoint 6) compile the module's **real** decision
+source, not a copy. Without the seam, checkpoint 5 tests a reimplementation and
+checkpoint 6 fuzzes one — both green, both proving nothing about shipped code.
+
+Three states, from the checkpoint 0 probe:
+
+- **Seam exists and is clean** — no `ngx_http_request_t` in `*_scan.c`. Nothing
+  to do; record it and move on.
+- **Seam is nominal** — `*_scan.c` exists but reaches for `r->`, allocates from
+  `r->pool`, or logs through `r->connection->log`. It cannot be linked outside
+  nginx, so the fuzz and unit builds either fail or quietly link a stubbed
+  variant. **Growth in `ci/fuzz/ngx_stubs.c` is the tell** — every stub added
+  beyond the reference's set is a dependency that should have been refactored out.
+- **No seam** — decision logic is inline in `*_module.c`. Extract it here.
+
+The extraction, when needed:
+
+1. `*_scan.c` / `*_scan.h` take bytes and return a verdict. No nginx request
+   types in the signature, no allocation from a request pool — pass a buffer in
+   or take an explicit allocator argument.
+2. `*_module.c` keeps the handler, directive parsing, config merging and every
+   `ngx_http_*` call, and calls into the seam.
+3. Wire both consumers: `ci/tests/unit/run.sh` and `ci/fuzz/build.sh` compile the
+   target's real `*_scan.c` — the same source, not a second copy.
+
+**Do not change behaviour while extracting.** This is a move, and the baseline
+suite from checkpoint 0 must stay green across it — run it wherever it currently
+lives, since `ci/` does not exist yet. A behavioural fix that rides along makes
+any later bisect ambiguous; a real bug found while extracting goes to
+`issues.md`.
+
+If the module genuinely has no decision logic to separate — a pure plumbing
+module whose only work is `ngx_http_*` calls — say so with the `file:line` that
+shows it, and note that checkpoints 5 and 6 are correspondingly thin. That is a
+legitimate outcome, but state it rather than skipping silently.
+
+Paths below assume `src/`; a target that still keeps its C at the repo root
+creates the seam **beside the existing `*_module.c`**, wherever that is, and it
+moves under `src/` with everything else at checkpoint 2. Do not create `src/`
+here — that split would land the same C in two commits.
+
+```sh
+ls src/*_scan.c src/*_scan.h 2>/dev/null || ls *_scan.c *_scan.h
+grep -n 'ngx_http_request_t\|r->\|ngx_http_' $(ls src/*_scan.c 2>/dev/null || ls *_scan.c)
+grep -n '_scan\.c' ci/fuzz/build.sh ci/tests/unit/run.sh 2>/dev/null
+git diff --stat HEAD~1 -- ci/fuzz/ngx_stubs.c               # did stubs grow?
+```
+
+The reference's `build-test.yml` asserts the seam file exists by name after a
+rename. Confirm the target's equivalent names the **target's** file — a path
+that no longer exists makes the assertion vacuous, not failing.
+
+**Acceptance:** no nginx request types inside `*_scan.c`; the module still builds
+and the checkpoint 0 baseline suite is still green, with no behavioural diff.
+
+Wiring the unit and fuzz builds to compile that source is checkpoint 2's job —
+whichever of `build.sh` / `run.sh` the target already has gets pointed at the
+seam in this PR; the rest follow the material into `ci/`. If the target has
+neither yet, say so: the seam is verified by build and grep here, and by
+checkpoints 5 and 6 once its consumers exist.
+
+---
+
+# Phase 2 — Adoption
+
+Eight checkpoints, one PR each, in order. This is the bulk of the job: layout,
+runner identity, entry points, test layers, sanitizers, caching, lanes and
+self-hosted hardening.
+
+## 2 — Move CI material under `ci/`
 
 Target layout, matching the reference:
 
@@ -125,10 +320,12 @@ ci/
   vendor/nginx-tests/    upstream suite submodule
   tools/                 ci-build.sh, nginx-tree.sh, test_runtime.py,
                          coverage.sh, max-port.sh, ci-hang-guard.sh, soak.sh
-  linter/                local lint gate (checkpoint 6)
+  linter/                local lint gate (checkpoint 7)
 ```
 
-- `git mv`, never copy-then-delete — blame must survive.
+- `git mv`, never copy-then-delete — blame must survive. Verify with
+  `git log --follow` on one moved file before continuing; a move recorded as
+  delete+add loses the history silently and cannot be repaired after merge.
 - A directory move breaks **every relative path that climbs out of it**. Grep
   and fix in this order: nginx's module **`config` file** (it names every source
   path and is the one file whose breakage stops the module building at all),
@@ -139,9 +336,10 @@ ci/
 - `git submodule update --init` still working after moving `ci/vendor/nginx-tests`
   is a required check — the `.gitmodules` `path:` must be edited, not just the
   directory moved.
-- **No `src/`? Creating one is part of this checkpoint.** Two of eight derived
-  modules keep `ngx_http_<name>_module.c` (sometimes plus `<name>_core.c/.h`) at
-  the repo root. Everything downstream is scoped to `src/` — `lint-c.sh`,
+- **No `src/`? Creating one is part of this checkpoint** — and the seam files
+  from checkpoint 1 move with the rest of the C. Two of eight derived modules
+  keep `ngx_http_<name>_module.c` (sometimes plus `<name>_core.c/.h`) at the
+  repo root. Everything downstream is scoped to `src/` — `lint-c.sh`,
   `lint-nginx.sh`, the gcovr filter, the CodeQL TU filter — and every one
   *passes* on an empty selection rather than failing. Move the C under `src/`
   and update `config` in the same commit. Prove it: a `malloc`/`strcpy` probe
@@ -154,7 +352,7 @@ ci/
 
 ---
 
-## 2 — Runner identity is not portable
+## 3 — Runner identity is not portable
 
 Settle this before porting a single workflow. `builder02` is the label of **a
 physical machine myguard owns**, spread across three files that must agree:
@@ -216,7 +414,7 @@ control.
 never smuggled into the port. All three files change together with their own
 labels, the fork arm stays the hosted runner, and the condition stays
 `github.event.pull_request.head.repo.fork` — not `github.actor`, not a repo
-variable, both of which a fork controls. Then read checkpoint 8 in full.
+variable, both of which a fork controls. Then read checkpoint 9 in full.
 
 ### Verify, both directions
 
@@ -261,12 +459,12 @@ delete the probe. Two things about it, both verified against the reference on
 
 ---
 
-## 3 — Workflows, badges, and ONE entry point
+## 4 — Workflows, badges, and ONE entry point
 
 Do this in two commits: the demotion first, then the missing workflows. Adding a
 workflow to a repo that still has six triggers multiplies the problem.
 
-### 3a. Demote to a single orchestrator
+### 4a. Demote to a single orchestrator
 
 The highest-risk edit in the job. The target has N workflows each carrying
 `pull_request:` (measured: three to six, with `workflow_call:` nowhere). End
@@ -280,6 +478,14 @@ as a `workflow_call:` member.
    state and the proof the call graph is wired.
 3. Remove `pull_request:` from every member in one commit. Now each runs once.
 
+**Step 3 is the point of no return**, and the only step in the job that can leave
+the repo with *no* PR gate at all. Do not take it until step 2 showed **every**
+member running twice — a member that ran once was never called, and removing its
+own trigger silences it completely. If even one did not double-run, fix `ci.yml`
+and repeat step 2; do not proceed on the theory that it will resolve itself.
+Should the merged result gate nothing, revert this PR first and diagnose after —
+an ungated default branch is not a state to debug in place.
+
 Skipping step 2 is how a member ends up called by nobody: `ci.yml` references a
 job name that does not exist, the call contributes nothing, and the suite looks
 green because the check that would have failed never ran.
@@ -290,18 +496,18 @@ Two things that break a called workflow and not a standalone one:
   standalone loses it when called unless the caller passes it.
 - **Path filters do not work on a called workflow** — it cannot filter its own
   triggering. Gates move to a `changes` job in the orchestrator with an explicit
-  job-level `if`. See checkpoint 7 rule 8.
+  job-level `if`. See checkpoint 8 rule 8.
 
 A second entry point that is not `pull_request:` (a `schedule:`, a
 `workflow_dispatch:`) is fine and normal — `bump.yml` and `ci-deep.yml` in the
 reference are schedule-driven and not members of the PR lane.
 
-### 3b. The workflow set
+### 4b. The workflow set
 
 | Workflow | What it must gate in the target |
 |---|---|
 | `ci.yml` | orchestrator; the ONLY `pull_request` entry point |
-| `lint.yml` | the `ci/linter/` gate (checkpoint 6), hosted runner |
+| `lint.yml` | the `ci/linter/` gate (checkpoint 7), hosted runner |
 | `build-test.yml` | build, `.so` dlopens, bad config rejected, `-T` survives merged multi-context config, `-Werror`, Test::Nginx, ASan+UBSan |
 | `asan.yml` | ASan/UBSan request-storm soak, static `--add-module` |
 | `fuzzing.yml` | replay every past crash, then fresh fuzz |
@@ -315,7 +521,7 @@ Also port, adapting paths: `.github/versions.env` (single source of truth for
 version **and sha256** pins — tarballs verified by digest, not version string),
 `.github/scripts/{load-versions,compute-versions,fetch-verify}.sh`,
 `.github/actions/build-cache/`, and `.github/actionlint.yaml` (subject to
-checkpoint 2).
+checkpoint 3).
 
 **Workflows the target has and the reference does not:** rule 2 — they survive.
 One derived module carries a `runtime-tests.yml` with no reference equivalent;
@@ -339,7 +545,7 @@ shipped this in the wrong place until 2026-08-02; `fixtures/policy/verify-after-
 is the negative control that keeps it right. Read the target's step ORDER. A
 target whose driver picks its own free port is already immune; leave it and say so.
 
-### 3c. Badges — same order, same text
+### 4c. Badges — same order, same text
 
 ```text
 Build&Test, Security Scanners, Fuzzing, Valgrind, CodeQL, A/UBSan, CI Deep
@@ -369,7 +575,7 @@ repo; CI table and badge row in identical order and spelling;
 
 ---
 
-## 4 — The four test layers, then coverage
+## 5 — The four test layers, then coverage
 
 The reference ships all four. **Reuse them; do not re-derive.**
 
@@ -416,15 +622,15 @@ goal; every *reachable* branch having a meaningful assertion is.
 
 ---
 
-## 5 — ASan and fuzzing, retargeted
+## 6 — ASan and fuzzing, retargeted
 
 Fuzzing is per-module work; a copied harness driving the skeleton's rule table
 proves nothing about the target.
 
 - The fuzz target must call the **real** decision function with
-  `(const uint8_t *, size_t)`, not a reimplementation. No such seam — decision
-  logic entangled with `ngx_http_request_t`? Extract it first. That refactor is
-  in scope here; it is what makes everything else measurable.
+  `(const uint8_t *, size_t)`, not a reimplementation. That seam is checkpoint
+  1's job and should already exist; if it does not, stop and land 1 first —
+  everything measured here is meaningless without it.
 - Seed corpus from the module's actual domain: real headers/bodies/config values
   it parses, plus every past crash under `ci/fuzz/regressions/`.
 - `fuzz.dict` with the module's real tokens. A dictionary of the skeleton's
@@ -448,9 +654,9 @@ step (verify once, then revert).
 
 ---
 
-## 6 — Caching and the linter gate
+## 7 — Caching and the linter gate
 
-### 6a. Caching
+### 7a. Caching
 
 Every build goes through `ci/tools/ci-build.sh` as the single chokepoint; no
 workflow duplicates cache logic. Layers, cheapest first: apt/packages, ccache
@@ -477,7 +683,7 @@ Load-bearing rules:
 - State the honest win in the README. If caching saves 5s on a 2.5-minute gate,
   say so.
 
-### 6b. The linter gate
+### 7b. The linter gate
 
 Port `ci/linter/` and follow **[linter/README.md](linter/README.md)** verbatim:
 `apt-get` first, then `pipx` for what Debian lacks, then `cpan` for Perl, then
@@ -504,7 +710,7 @@ convention is `run-all.sh` + `LINT_ONLY` + exit codes (`0` clean, `1` findings,
 - **keep every checker the target already ran** (rule 2), behind the same entry
   point rather than dropped because the reference lacks it.
 - the three **repo-policy** checks do not transfer unexamined: `ci-runners`
-  depends on `TRUST_SPLITS` being rewritten (checkpoint 2), and `ci-ports` is
+  depends on `TRUST_SPLITS` being rewritten (checkpoint 3), and `ci-ports` is
   meaningful only if the target binds a fixed band. A target whose driver picks
   its own port should say so in the README and skip it loudly, not carry a check
   that can never fire.
@@ -544,7 +750,7 @@ checkers failing at once and confirm both appear and both are named in the
 
 ---
 
-## 7 — Runner topology: lanes, at most four
+## 8 — Runner topology: lanes, at most four
 
 CI wall-clock on a self-hosted host is dominated by jobs QUEUEING for a
 label-matching slot. Ten simultaneous requests just means the tail waits.
@@ -599,22 +805,22 @@ measurement and gets trusted. Record it in the memory mirror too.
 
 ---
 
-## 8 — Self-hosted runner exposure
+## 9 — Self-hosted runner exposure
 
 Applies whenever `runs-on` includes `self-hosted`. **Hosted-only target?** This
-is one line in the PR body: "no self-hosted runners; checkpoint 8 N/A except the
+is one line in the PR body: "no self-hosted runners; checkpoint 9 N/A except the
 token, checkout and action-pinning bullets" — those still apply, being about the
 GitHub token and supply chain rather than the runner.
 
 A self-hosted runner executing untrusted code is arbitrary code execution on the
 build host. Required:
 
-- **Fork routing** with the adopter's OWN labels (checkpoint 2), never
+- **Fork routing** with the adopter's OWN labels (checkpoint 3), never
   `builder02`:
   `runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","<runner-label>","lxc"]') }}`
 - **`TRUST_SPLITS` and `.github/actionlint.yaml` list the adopter's labels and
   nothing else**, edited in the same commit as the workflows. Probe it red per
-  checkpoint 2 before claiming this.
+  checkpoint 3 before claiming this.
 - **No `pull_request_target`**, ever, in a repo with self-hosted runners. It runs
   with a writable token in the base-repo context; combined with a fork's code it
   is a full compromise. If something seems to need it, it does not.
@@ -644,6 +850,211 @@ build host. Required:
   costs nothing and stops the unsafe one being copied somewhere it matters.
 
 ---
+
+# Phase 3 — Depth pass
+
+Run after every phase-2 checkpoint has merged. Everything here is already green;
+the question is whether it would catch anything.
+
+## 10 — Depth pass: is each gate as strong as it looks?
+
+Run this **after all nine checkpoints have merged**, as its own PR or a short
+series. Everything here is about a gate that is already green: the question is
+not "does it run" but "would it catch anything". A soak that never reaches the
+handler, a fuzzer driving a reimplementation and a coverage number computed over
+nginx core all report success indefinitely.
+
+Each item below is answered with a measurement, in the PR body, not a reading of
+the YAML. Where an item cannot be met, say so with the `file:line` and leave the
+honest value — rule "never weaken a gate" still applies.
+
+### 10a. The decision seam — re-verify first
+
+Checkpoint 1 established it; everything below depends on it still holding, and
+it decays quietly as handler code is added. Re-run 1's probes:
+
+```sh
+grep -n 'ngx_http_request_t\|r->\|ngx_http_' src/*_scan.c   # -> expect no hits
+grep -n '_scan\.c' ci/fuzz/build.sh ci/tests/unit/run.sh
+git log --oneline -- ci/fuzz/ngx_stubs.c                    # stubs grown since 1?
+```
+
+A new stub in `ngx_stubs.c` is the signal that decision logic drifted back into
+nginx types and someone stubbed around it rather than refactoring. Fix the seam,
+not the stub. If 1 was skipped as "no decision logic to separate", confirm that
+is still true — a module grows parse surfaces.
+
+**Acceptance:** unit and fuzz builds still compile the target's real `*_scan.c`
+(same source, not a second copy), no nginx request types inside it, no stub
+growth that is not justified in the PR body.
+
+### 10b. ASan/UBSan — does the soak reach the module?
+
+The failure is silent: a default config where the handler never runs produces a
+clean ASan report forever.
+
+- Prove reachability with evidence, not inspection — a counter, a log line, or
+  coverage from the soak build showing the module's own translation unit
+  executed. Put the number in the PR body.
+- The soak must exercise the directives the module actually ships and its body
+  path, at the shapes an attacker controls, not a single GET.
+- Build stays static (`--add-module`); dynamic loses interception where it
+  matters. mold stays skipped under ASan.
+- UBSan: confirm the target's flags include the checks the module can actually
+  trip (integer overflow, alignment, shift) and that it is **trapping or
+  exiting non-zero** — a UBSan that only prints to stderr passes a red run.
+- Verify once by reintroducing a known-bad access, watching it abort, reverting.
+
+### 10c. Fuzzing — can the surface be widened?
+
+The reference carries two targets (`fuzz_scan`, `fuzz_body`). One target on a
+module with several parse surfaces is under-fuzzed by construction.
+
+- Enumerate every function taking attacker-controlled bytes; each is a candidate
+  target. Add the ones with a real seam, one per parse surface, and say in the
+  PR which surfaces remain uncovered and why.
+- `fuzz.dict` holds the **target's** tokens. Re-derive; the skeleton's dictionary
+  misdirects.
+- Corpus from the module's real domain plus every past crash under
+  `ci/fuzz/regressions/`. Replay-then-fuzz order stays.
+- Report corpus size, and coverage or feature count reached at the end of the
+  time-boxed run. A fresh run that plateaus in seconds is a stuck target, not a
+  clean one.
+- **Acceptance is unchanged from checkpoint 6 and is a mutation test:** reintroduce
+  a past bug, confirm replay catches it in seconds, revert.
+
+### 10d. Coverage — measured over the module only
+
+`ci/tools/coverage.sh` exists because an unfiltered `gcovr` reports ~1% — nginx
+core is instrumented by the same configure run and swamps the module.
+
+- Confirm the target's coverage filter names the target's `src/`, not the
+  reference's, and that the reported figure moves when a test is deleted. A
+  number that does not move is filtered wrong.
+- **`--object-directory`, never `--gcov-object-directory`** — the latter arrived
+  in gcovr 7.0 and is a hard argparse failure below it. Condition is the gcovr
+  major version the job actually runs, not whether a pin exists.
+- Raise coverage by adding boundary cases to `ci/tests/unit/test_scan.c` — the
+  cap, the seam, the hold window, off-by-one on each — not by widening the
+  filter or lowering `COVERAGE_FAIL_UNDER`. Uncovered lines that are genuinely
+  unreachable get a comment naming why.
+- Report before/after and which specific branches the new cases reached.
+
+### 10e. Valgrind, memcheck, helgrind — right tool, right length
+
+The reference splits these deliberately: `valgrind.yml` is a 60s memcheck lite on
+the merge path; `ci-deep.yml` runs the 600s memcheck **and** helgrind soaks
+monthly, both through `ci/tools/soak.sh` (`USE_VALGRIND` / `USE_HELGRIND`).
+
+**Unconditional — these are grep-cheap and cost nothing on a quiet module:**
+
+- Confirm both soaks exist and that **helgrind is actually invoked** — a copied
+  `ci-deep.yml` that lost the helgrind job still shows a green CI Deep badge.
+  A dormant module is exactly where a silently-missing job survives longest.
+- `valgrind.supp` needs the **target's** nginx-core suppressions. An over-broad
+  suppression silently covers the module's own errors: check each entry is scoped
+  to a core frame, and that the file was regenerated rather than copied. This is
+  independent of recent activity — a stale suppression hides today's bugs.
+- Helgrind is only meaningful if the target has shared state across workers
+  (shm, a timer, a resolver callback). If it has none, say so explicitly rather
+  than running a soak that can never report.
+
+**Running the soaks is conditional.** 600s memcheck plus helgrind on code that
+has not moved since the last green deep run re-proves a known result. Skip if
+**all** of the following are unchanged since that run:
+
+```sh
+LAST=<sha of the last green ci-deep run>
+git diff --stat $LAST..HEAD -- src/ ci/ .github/versions.env
+```
+
+Anything there → run them. Note the deliberate inclusion of `versions.env`:
+`bump.yml` bumps pins weekly and `ci-deep.yml` runs monthly, so a module with
+**zero source commits can still be running against a new nginx**. Commit recency
+in `src/` alone is the wrong clock. A submodule bump of `ci/vendor/nginx-tests`
+counts the same way.
+
+- When run: verify the soak is under real load and reaches the module (10b's
+  evidence applies here too), and that a deliberate leak is reported before you
+  trust it. Report wall-clock per soak and where each runs.
+- When skipped: say so in the PR body with the sha you compared against and the
+  empty diff. A silent skip is indistinguishable from a soak that never existed.
+
+### 10f. Caching — right layers, no stale-green
+
+Audit `ci/tools/ci-build.sh` as the single chokepoint; no workflow may duplicate
+cache logic. Walk the layers cheapest-first and confirm each: apt/packages,
+ccache (`CCACHE_COMPILERCHECK=content`), mold (skipped under ASan), eatmydata
+(wraps configure/install only), build tree, source tarball (sha256 verified after
+restore). `bear`/`compile_commands.json` where clang-tidy consumes it.
+
+- **nginx's `configure` ignores a bare `CC=`** — confirm ccache is wired through
+  the configure argument, then prove it: report the hit rate from a warm run. A
+  0% hit rate on a second identical run means it is not wired, whatever the log
+  says.
+- ccache may use a `restore-keys` ladder; the **build-tree cache stays
+  exact-match only**. Do not "fix" that for consistency.
+- Keep the hybrid restore (warm on-disk dirs + `actions/cache` fallback). Deleting
+  the fallback because the runners are persistent is how this degrades silently
+  the day they become ephemeral.
+- A cold PR run is not a bug: GitHub scopes caches by ref, so a PR writes
+  `refs/pull/N/merge` and cannot read a branch's entries.
+- The rule that outranks every speedup: **a cache must never serve a stale
+  artifact into a green result.** If a key cannot express what invalidates it, do
+  not cache that layer. Check each key includes what actually changes the output.
+- State the honest win in the README. If it saves 5s on a 2.5-minute gate, say so.
+
+### 10g. The linter gate — does every checker still bite?
+
+`zizmor`, `actionlint`, `yamllint`, `semgrep`, `codespell` and the three
+repo-policy checks were installed at checkpoint 7b and used at checkpoint 9. This
+item does not re-install them; it asks whether each still fires. A checker that
+has become a no-op reports the same clean line as one that passes.
+
+- Re-run every probe in the linter README's **"Verify before trusting"** section
+  against the target and observe each red. Then run with **two** checkers failing
+  at once and confirm both appear and both are named in the `== FAIL:` line.
+- **`semgrep` first.** `--jobs=1` and `--metrics=off` are exactly the flags that
+  can silently turn it into a no-op, so its probe must still fire. `--jobs=1` is a
+  correctness flag, not a speed one — see 6b.
+- **`zizmor` findings drift with the workflow set.** Every workflow added since
+  6b is new attack surface it now audits. Confirm the count of audited workflows
+  matches the count in `.github/workflows/`, and that each `# zizmor: ignore[rule]`
+  still names a reason that is still true. A suppression outlives the thing it
+  suppressed.
+- **`actionlint` remains blind to the `fromJSON` ternary** (checkpoint 3). Do not
+  read a clean actionlint as evidence about runner labels; that is probe 2's job
+  and probe 2 only.
+- Confirm `LINT_ONLY`'s string in `lint.yml` still matches the checkers that
+  actually exist — it diverges as the set changes and nothing cross-checks it.
+- `run-all.sh` reads `git ls-files`: a **new untracked file is invisible to the
+  linter**. Stage before trusting a clean run.
+- Re-time the hook against the ~2s budget, `/proc/loadavg` checked first. Over
+  budget → scope the slow checker, never drop one, never a default-on skip flag.
+
+### 10h. CI shape — re-measure, then optimise
+
+Only after the above, and only with numbers from `gh run list`:
+
+- Re-check checkpoint 8's lane topology against **measured** wall-clock, not the
+  estimates in place when it was written. Lanes drift as tests are added.
+- Confirm exactly one `pull_request:` entry point still holds, and that every
+  member is reached — a member called by nobody keeps a stale-green badge and
+  goes grey only when deleted. Re-run the double-run proof if anything moved.
+- Check `/proc/loadavg` before timing anything: at load ~50 the same full-tree
+  run varied 2.2s–12.4s over six attempts here, a spread wider than most wins.
+- Optimise by moving work off the merge path into `ci-deep.yml`, never by
+  deleting a check or widening a threshold.
+
+**Report back for this section:** for each of 10a–10h, the measurement, and for
+every gate the one sentence stating what it would now catch that it did not
+before. A "verified correct" with no number attached is not an answer.
+
+---
+
+# Phase 4 — Close out
+
+Docs, memory mirror, the anchor a future forward depends on, and the report.
 
 ## Finishing
 
@@ -678,6 +1089,15 @@ answer explicitly, because they are what a greenfield reading gets wrong:
 4. **Badges** — the final row, so order and spelling can be compared without
    opening the repo.
 
+Plus, whenever either applies:
+
+5. **Stopped** — which phase −1 condition fired, at which checkpoint, and what a
+   human has to decide. A job that stopped early is a legitimate outcome; one
+   reported as finished when it stopped is not.
+6. **Anything left disabled, skipped or unverified** — a workflow not enabled, a
+   soak skipped per 10e, a gate never seen red. Silence here reads as coverage
+   that does not exist.
+
 Do not report a checkpoint complete on a gate you never saw fail.
 
 ---
@@ -711,7 +1131,7 @@ layer it does not have is a checkpoint, not a forward.
 
 Then check the drift classes. **None is visible from a green run:**
 
-- **Port bands** — see checkpoint 3b. Read the target's step ORDER, not just the
+- **Port bands** — see checkpoint 4b. Read the target's step ORDER, not just the
   presence of a verify step.
 - **Coverage option spelling** — `--gcov-object-directory` fails argparse on
   gcovr below 7.0. The condition is the gcovr major version the job actually
@@ -725,9 +1145,9 @@ Then check the drift classes. **None is visible from a green run:**
   checks silently vacuous (a `.yaml` extension, an inline `on: [pull_request]`, a
   comment after a job key). Ship the YAML-parse version and run
   `ci/linter/selftest.sh` plus `ci/linter/fixtures/policy/` in the target.
-- **Runner identity** — checkpoint 2. Any change touching a `runs-on`,
+- **Runner identity** — checkpoint 3. Any change touching a `runs-on`,
   `actionlint.yaml` or `TRUST_SPLITS` carries our pool with it. Run probe 2.
-- **No `src/`** — checkpoint 1. Everything scoped to `src/` selects nothing and
+- **No `src/`** — checkpoint 2. Everything scoped to `src/` selects nothing and
   reports success.
 
 Re-derive for the target rather than copying: module name and symbol prefix
