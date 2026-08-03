@@ -181,8 +181,10 @@ for consistency, it's intentional.
 On the skeleton itself the win is small and honestly stated: a cold build is ~7s
 (≈5s of *serial* `configure`, ≈2s of compile across 127 objects on 32 cores), and
 a warm one is ~0s. **Caching is not why the PR gate is fast** — the gate is
-already ~2.5 min wall-clock, and its two slowest jobs are *time-boxed by design*
-(120s fuzz, 60s memcheck soak), so no cache can shorten them by a second.
+fuzz-bound, not build-bound, and its two slowest jobs are *time-boxed by design*
+(120s fuzz, 60s memcheck soak), so no cache can shorten them by a second. The
+measured lane durations live in `ci.yml`'s header comment, which is the only
+place they are recorded; do not restate a total here, it drifts.
 
 It is here because this is a **template**. A real module's scan core is far
 heavier than the skeleton's, and the layer that costs nothing today is the one
@@ -331,6 +333,16 @@ Soak: `valgrind`
 Lint: `ci/linter/install-linters.sh` (shellcheck, cppcheck, flawfinder,
 yamllint, clang-tidy, perlcritic, ruff, semgrep, codespell, actionlint,
 zizmor, Test::Nginx)
+
+## See also
+
+- [Introduction article on deb.myguard.nl](https://deb.myguard.nl/articles/nginx-skeleton-module/)
+  — the tour: the structural rule, the four test layers, and the green-gates-that-
+  verify-nothing list, written for someone who has not read this README.
+- [nginx-test-harness](https://github.com/myguard-labs/nginx-test-harness) — fd and
+  cycle-pool leak testing in C, for the leak class the sanitizers here cannot see.
+- [Where to find us](https://deb.myguard.nl/where-to-find-us/) — all our repos,
+  packages and Docker images in one place.
 
 ## Contributing
 
