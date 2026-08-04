@@ -1309,6 +1309,28 @@ Ask once, as a single multi-select question, and do none of them unattended:
    a gate (step 14): the offer is more *meaningful assertions*, each with its
    negative control, never a higher number. If the honest answer is that the
    remaining uncovered lines are unreachable, say that instead of offering.
+8. **Anything left uncommitted or unpushed** — check before offering, and report
+   what you find either way:
+
+   ```sh
+   git -C <TARGET> status --porcelain          # untracked or modified
+   git -C <TARGET> log --branches --not --remotes --oneline   # committed, unpushed
+   git -C <TARGET> stash list                  # never yours, but say if one exists
+   ```
+
+   Three classes, and only the first is yours to offer to fix:
+
+   - **work of yours that never landed** — a file written and never staged, a
+     commit never pushed, a memory-mirror update made in the working tree only.
+     `run-all.sh` reads `git ls-files`, so a new untracked file was also invisible
+     to every linter that "passed" over it.
+   - **the dirt recorded at step 1** — it was there when you arrived. Confirm it
+     is byte-identical to what you recorded and leave it alone. Do not offer to
+     commit it; it is not yours and the owner cannot find it later if you do.
+   - **the superrepo gitlink**, if the target is a myguard submodule — every
+     merged PR needs its bump on the superrepo's `master`. A missing one means the
+     superrepo still points at the pre-adoption commit, which is invisible from
+     inside the target and is the single easiest thing in this job to forget.
 
 ---
 
