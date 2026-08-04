@@ -174,14 +174,38 @@ jobs:
       # The input goes through an env var, never ${{ }} inside run: -- template
       # expansion of event data into a shell script is an injection primitive
       # (zizmor template-injection), and this file is a template people copy.
+      #
+      # The env var closes template injection but NOT $GITHUB_ENV injection.
+      # $GITHUB_ENV is parsed line by line, so a dispatch input containing a
+      # newline ("1$'\n'PATH=/tmp/evil") writes a SECOND, attacker-chosen
+      # variable into the environment of every later step in this job. The
+      # value must therefore be validated before it is written, not merely
+      # kept out of the shell's own syntax.
+      #
+      # Validation is whole-buffer, not per-line: `grep -qzE '^[0-9]+$'`
+      # anchors against the entire NUL-delimited input, whereas a plain
+      # `grep -qE '^[0-9]+$'` treats the embedded newline as a line boundary
+      # and matches the benign first line -- letting the payload through.
+      # Then range-check, then fail the job LOUDLY. Never silently fall back
+      # to the default on a rejected value: that turns an attack into a
+      # normal-looking run. printf, not echo, avoids escape-sequence surprises.
       - name: Select fuzz duration
         env:
           DISPATCH_FUZZ_SECS: ${{ github.event.inputs.fuzz_seconds }}
         run: |
+          set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            echo "FUZZ_SECS=${DISPATCH_FUZZ_SECS}" >> "$GITHUB_ENV"
+            if ! printf '%s' "${DISPATCH_FUZZ_SECS}" | grep -qzE '^[0-9]+$'; then
+              echo "::error::fuzz_seconds must be a plain decimal integer (got invalid/empty/malformed input)"
+              exit 1
+            fi
+            if [ "${DISPATCH_FUZZ_SECS}" -lt 1 ] || [ "${DISPATCH_FUZZ_SECS}" -gt 86400 ]; then
+              echo "::error::fuzz_seconds out of range 1..86400 (got ${DISPATCH_FUZZ_SECS})"
+              exit 1
+            fi
+            printf 'FUZZ_SECS=%s\n' "${DISPATCH_FUZZ_SECS}" >> "$GITHUB_ENV"
           else
-            echo "FUZZ_SECS=14400" >> "$GITHUB_ENV"
+            printf 'FUZZ_SECS=14400\n' >> "$GITHUB_ENV"
           fi
 
       - name: Restore build caches
