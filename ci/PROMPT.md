@@ -101,7 +101,7 @@ kept in your head is not.
 | Condition | Why it cannot be worked around |
 |---|---|
 | `<TARGET>` is not a git repository | nothing to branch, nothing to PR |
-| No push access / `gh auth status` fails for that repo | cannot land anything |
+| No push access — `viewerPermission` is not `ADMIN`/`MAINTAIN`/`WRITE` (step 1) | cannot land anything |
 | A fix requires deleting or weakening an existing gate | rule 2 — that is a coverage regression, and the point of the job is the opposite |
 
 Everything else: record and continue. Explicitly, and against the old rules:
@@ -123,8 +123,9 @@ Everything else: record and continue. Explicitly, and against the old rules:
   Degrade: hosted runner instead of self-hosted, the job omitted rather than
   broken, and a finding naming exactly what is missing.
 - **A write outside `<TARGET>` seems necessary** — it is not. It goes in a
-  findings file. The only writes outside the target are the two in step 2, and
-  step 23's skeleton PR.
+  findings file. The only writes to another *repository* are the two in step 2
+  and step 23's skeleton PR; `$SCRATCH` is untracked working space and is not
+  one of them.
 
 **Never disable a failing check to make a PR mergeable.** Not `[skip ci]`, not
 `continue-on-error`, not commenting out a step, not `gh workflow disable`, not
@@ -148,8 +149,14 @@ cd <TARGET>
 git status --porcelain            # dirty is FINE — record, do not stash
 git rev-parse --abbrev-ref HEAD   # note it; this is the base to branch from
 git remote -v                     # confirm you are where you think you are
-gh auth status                    # can you actually open a PR here?
+gh auth status                    # authenticated at all?
+gh repo view <owner>/<repo> --json viewerPermission -q .viewerPermission
 ```
+
+The second command is the one that matters. `gh auth status` passes for a
+read-only account, which then fails at the first push — six steps in, with a
+branch already cut. `ADMIN`, `MAINTAIN` or `WRITE` continues; `READ`, `TRIAGE`
+or an error is the hard stop.
 
 Then:
 
@@ -353,8 +360,11 @@ seam in this PR; the rest follow the material into `ci/`. If the target has
 neither yet, say so: the seam is verified by build and grep here, and by steps 11
 and 13 once its consumers exist.
 
-**Acceptance:** no nginx request types inside `*_scan.c`; the module still builds
-and the step 3 baseline suite is still green, with no behavioural diff.
+**Acceptance:** no nginx request types inside `*_scan.c`; the module still builds;
+and the step 3 baseline suite is **unchanged** — every test that passed at step 3
+still passes, with no behavioural diff. A test that was already red at step 3
+stays red and is named in the PR body; do not fix it here and do not treat it as
+a reason to park the step.
 
 ---
 
@@ -712,8 +722,12 @@ table proves nothing about the target.
 
 - The fuzz target must call the **real** decision function with
   `(const uint8_t *, size_t)`, not a reimplementation. That seam is step 4's job
-  and should already exist; if it does not, stop and land 4 first — everything
-  measured here is meaningless without it.
+  and should already exist. If step 4 was parked and it does not, do not stop:
+  record in `adoption-findings.md` that the real decision function is
+  unreachable, mark this step degraded in the PR body, and continue with the
+  parts that do not need it (corpus, dict, the ASan soak). A fuzz target driving
+  a reimplementation is worse than none, so do not build one — everything
+  measured against a copy is meaningless.
 - Seed corpus from the module's actual domain: real headers/bodies/config values
   it parses, plus every past crash under `ci/fuzz/regressions/`.
 - `fuzz.dict` with the module's real tokens. A dictionary of the skeleton's
