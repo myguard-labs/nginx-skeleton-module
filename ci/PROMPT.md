@@ -71,6 +71,8 @@ Standing constraints, all steps:
   blocks the gate you came to install.
 - Comments explain **why**, at the decision, in the target's voice. A rule with
   no recorded reason gets deleted by the next person who finds it inconvenient.
+- **Keep the phase todo list live.** Step 3 writes it; every step after keeps it
+  accurate — one item `in_progress`, items closed on merge, not on push.
 
 ## Work autonomously — record, do not ask
 
@@ -279,9 +281,32 @@ If it is already red, that is a finding for `adoption-findings.md` and a fact
 every later PR body must state — otherwise step 5 inherits blame for a failure
 that predates it. Do not stop; do not fix it.
 
+**Emit the run plan as a todo list.** As the last act of step 3, call `TodoWrite`
+once with one item per phase, skipping phases the 3/3 score has already settled
+and splitting a phase into two items where it lands more than one PR. Phase 1 is
+marked `completed` in the same call — it is done by the time you write it. Wording
+is `Phase <n>[ PR<k>]: steps <a>-<b> — <the work, in the target's own terms>`, so
+the list reads as this run's plan and not as a copy of the table above:
+
+```text
+[x] Phase 1: steps 1-3 — findings files, inventory, baseline
+[x] Phase 2: step 4 — decision seam verified clean by mutation, no PR needed
+[~] Phase 3 PR1: steps 5-6 — ci/ move + src/ creation + path fixes
+[ ] Phase 3 PR2: step 7 — runner identity (opt-in path, fork ternary + TRUST_SPLITS)
+[ ] Phase 4: steps 8-16 — orchestrator, workflow set, badges, test layers, coverage, caching, linter, lanes
+[ ] Phase 5: steps 17-22 — depth pass with measurements
+[ ] Phase 6: steps 23-25 — skeleton feedback PR, post-adoption checks, docs and report
+```
+
+Keep it current for the rest of the run: exactly one item `in_progress`, each
+flipped to `completed` when its PR merges — not when the branch is pushed. The
+list is the only place the user sees how far along a 25-step job is; a stale one
+is worse than none.
+
 **Acceptance:** the 3/3 score with the evidence for each marker; the three
 workflow buckets; the per-workflow wall-clock table; the baseline result. All in
-the mirror (or the findings file, for an external target).
+the mirror (or the findings file, for an external target). Plus the todo list
+written, with phase 1 already closed.
 
 ---
 
