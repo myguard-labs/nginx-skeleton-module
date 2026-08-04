@@ -75,7 +75,7 @@ ci/                        everything that only exists to test/build the module
     selftest.sh            negative controls for the gate itself
     fixtures/policy/       trees the policy checks must go RED on
   PROMPT.md                     adopt this standard in another module:
-                                eleven checkpoints in six phases
+                                63 steps in seven phases
 .githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
 .github/
   versions.env             version + sha256 pins, single source of truth
@@ -296,15 +296,16 @@ Read /opt/myguard/labs/nginx-skeleton-module/ci/PROMPT.md and apply it to
 /path/to/nginx-<name>-module.
 ```
 
-Eleven checkpoints in six phases, one PR each after the read-only first:
-inventory, the decision seam, the `ci/` layout, runner identity, workflows +
-badges + a single entry point, the four test layers, fuzzing, caching + the
-linter gate, lanes, self-hosted exposure, and a final depth pass asking whether
-any of the now-green gates would actually catch anything. Two phases carry no
-checkpoint of their own: one ahead of all of them sets the scope jail and the
-stop conditions, and one at the end closes out the docs, the memory mirror and
-the report. Checkpoint 0 works out how much of it the target already has, so you
-do not need to know in advance whether this is a first adoption or a top-up.
+63 steps in seven phases, covering: inventory, the decision seam, the `ci/`
+layout, runner identity, workflows + badges + a single entry point, the four
+test layers, fuzzing, caching + the linter gate, lanes, self-hosted exposure,
+and a depth pass asking whether any of the now-green gates would actually catch
+anything. A step is a **grind unit, not a PR** — it is sized to be handed to a
+cheap model with the file and nothing else, and steps land in groups across 14
+fixed PR boundaries that must not be merged partially. The last phase is the
+aftermath: the checks worth running once the adoption is green. Steps 1–6 work
+out how much of the standard the target already has, so you do not need to know
+in advance whether this is a first adoption or a top-up.
 
 It is a **merge into whatever CI the target already has**, not a greenfield
 install — the target's tests, thresholds and extra gates survive; the layout,
@@ -312,7 +313,7 @@ ordering, naming and entry points become the standard's. A final section covers
 the inverse job once a module is fully adopted: forwarding one later skeleton
 change into it.
 
-**Settle the runner question first** (checkpoint 2 of the prompt). These
+**Settle the runner question first** (steps 13–15 of the prompt). These
 workflows name `builder02`, a machine myguard owns, in 15 `runs-on` selectors
 plus `.github/actionlint.yaml` and `TRUST_SPLITS` in `workflow_policy.py` — and
 **no linter in this repo will tell an adopter they copied it**: actionlint

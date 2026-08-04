@@ -102,8 +102,8 @@ Standing constraints, all steps:
 
 **Default to proceeding.** This job runs unattended. Almost everything that used
 to be a stop is now a recorded finding: you write it down, degrade the affected
-step honestly, and carry on with the remaining 59. A run that stops at step 3
-with a question delivers nothing; a run that finishes 52 of 54 steps and hands
+step honestly, and carry on with the remaining 60. A run that stops at step 3
+with a question delivers nothing; a run that finishes 61 of 63 steps and hands
 back a precise list of the 2 it could not do delivers almost everything.
 
 Two files carry what you cannot act on. Create both at the start of step 1:
