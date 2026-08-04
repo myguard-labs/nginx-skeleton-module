@@ -17,7 +17,7 @@ repo write access; reads as a checklist for a human.
 Give the target the reference's **layout, gates, workflow set, badge row, linter
 entry point and conventions**, expressed over the target's own code and tests.
 
-**24 steps in 6 phases.** Steps are numbered 1–24 continuously and referenced by
+**25 steps in 6 phases.** Steps are numbered 1–25 continuously and referenced by
 number throughout. Each step is small enough to be handed to a cheap model with
 this file and nothing else: it names its own inputs, its own acceptance check,
 and where its output goes. Phases group steps and set the merge boundaries.
@@ -29,7 +29,7 @@ and where its output goes. Phases group steps and set the merge boundaries.
 | 3 | 5–7 | layout and runner identity | 2 |
 | 4 | 8–16 | workflows, tests, fuzzing, caching, linter, lanes | 8 |
 | 5 | 17–22 | depth pass — would any of it catch anything? | 1–6 |
-| 6 | 23–24 | close out: docs, memory, skeleton feedback, report | 1–2 |
+| 6 | 23–25 | close out: skeleton feedback, post-adoption checks, docs, report | 1–3 |
 
 Phase 5 runs only after every phase-4 step has merged.
 
@@ -77,14 +77,14 @@ Standing constraints, all steps:
 **Default to proceeding.** This job runs unattended. Almost everything that used
 to be a stop is now a recorded finding: you write it down, degrade the affected
 step honestly, and carry on with the remaining 23. A run that stops at step 3
-with a question delivers nothing; a run that finishes 22 of 24 steps and hands
+with a question delivers nothing; a run that finishes 23 of 25 steps and hands
 back a precise list of the 2 it could not do delivers almost everything.
 
 Two files carry what you cannot act on. Create both at the start of step 1:
 
 - **`$SCRATCH/adoption-findings.md`** — anything about the TARGET you could not
   fix: red baseline tests, a gate that will not go green, a behavioural bug, a
-  missing secret. At step 24 this is merged into the target's `issues.md` and
+  missing secret. At step 25 this is merged into the target's `issues.md` and
   summarised in the report.
 - **`$SCRATCH/skeleton-findings.md`** — anything about the REFERENCE: a bug in a
   ported script, a rule that could not be followed as written, a gate the target
@@ -1156,7 +1156,73 @@ manufacture a finding to have something to send.
 **Acceptance:** either the PR URL, or an explicit "no skeleton findings" line in
 the report.
 
-## 24 — Docs, memory, and the report
+## 24 — Post-adoption checks
+
+Two things that are only checkable once every PR has merged, and both produce
+fixes rather than sentences. Do them before writing the report, so the report
+describes the finished state.
+
+### Unresolved bot replies across every PR you opened
+
+A review bot replies on its own schedule. CodeRabbit rate-limits per developer
+(measured 2026-08-04: "next review available in 51 minutes"), so a review can
+arrive **after** you merged, and a reply to your reply arrives later still. A
+merged PR is not a closed conversation, and nothing notifies you.
+
+Walk every PR this job opened:
+
+```sh
+for n in <the PR numbers>; do
+  gh api repos/<owner>/<repo>/pulls/$n/comments --paginate \
+    -q '.[] | select(.user.login|test("\\[bot\\]$")) | "\(.id)\t\(.in_reply_to_id // "-")\t\(.path):\(.line)"'
+  gh api repos/<owner>/<repo>/issues/$n/comments \
+    -q '.[] | select(.user.login|test("\\[bot\\]$")) | .body' | grep -iE 'limit reached|could not start'
+done
+```
+
+Two things to look for, and they are different:
+
+- **a finding you never answered** — a top-level bot comment with no reply from
+  you. Verify it against the code like any other; fix, or refute with the
+  `file:line` that disproves it.
+- **a review that never ran** — a "review limit reached" or "could not start"
+  notice means that commit was never examined at all. A green checks list does
+  not distinguish this from a clean review. Say which commits were unreviewed in
+  the report rather than implying coverage you did not get.
+
+A confirmed finding that is a recurring *class* rather than a typo goes to the
+narrowest matching `.claude/skills/audit-*/` reference, not only to memory — the
+skill runs unprompted next time.
+
+### The linter set is the target's, not the reference's
+
+Step 15 ported `ci/linter/` and kept every checker the target already ran. That
+was a merge decision made early; by now the file set has moved. Re-derive it
+against what the repo actually contains:
+
+```sh
+git ls-files | sed -n 's/.*\.//p' | sort | uniq -c | sort -rn | head -20
+ls ci/linter/lint-*.sh
+grep -n 'LINT_ONLY' .github/workflows/lint.yml
+```
+
+Three failures, all of which report clean:
+
+- **a language present with no checker** — Lua, Rust, Go, Python, a Dockerfile,
+  a systemd unit. Add `lint-<name>.sh`; `run-all.sh` picks it up by glob. Also
+  record it in `skeleton-findings.md`: a checker the reference lacks is exactly
+  what step 23 sends back.
+- **a checker whose language left the repo** — it passes on an empty selection
+  forever. Remove it, or say why it stays.
+- **`LINT_ONLY` in `lint.yml` naming a checker that does not exist**, or omitting
+  one that does. Nothing cross-checks that string against the scripts on disk;
+  it silently diverges every time the set changes.
+
+**Acceptance:** every bot finding answered or explicitly listed as unreviewed;
+`LINT_ONLY` matches `ls ci/linter/lint-*.sh`; every language with more than a
+handful of tracked files has a checker or a stated reason not to.
+
+## 25 — Docs, memory, and the report
 
 - README rewritten, not appended to: badge row, `## CI` table, layout tree,
   Requirements, and a Linting section linking `ci/linter/README.md`.
@@ -1174,7 +1240,7 @@ the report.
 ### Report back
 
 Per step: what landed, what is red, what you left undone and why. Include
-measured before/after wall-clock and coverage. Six questions the report must
+measured before/after wall-clock and coverage. Seven questions the report must
 answer explicitly, because they are what a greenfield reading gets wrong:
 
 1. **Entry points** — how many workflows carried `pull_request:` before, and
@@ -1193,19 +1259,27 @@ answer explicitly, because they are what a greenfield reading gets wrong:
    secret, a thin gate because a behavioural fix was out of scope). This replaces
    the old "stopped" answer: the run does not stop, so this is where the
    unfinished work is accounted for.
-6. **Anything left disabled, skipped or unverified** — a workflow not enabled, a
+6. **Bot review coverage** — from step 24: every bot finding you answered, and
+   every commit that was never reviewed because the bot was rate-limited or
+   never ran. A green checks list does not distinguish the two, so state which
+   you had.
+7. **Anything left disabled, skipped or unverified** — a workflow not enabled, a
    soak skipped per step 21, a gate never seen red. Silence here reads as
    coverage that does not exist.
 
 Do not report a step complete on a gate you never saw fail.
 
-### Then ask, and only then
+### Aftermath
 
-With the report delivered, ask the user which of these to do next. Ask once, as a
-single multi-select question; do none of them unattended:
+Everything above is done and reported. These are the things worth doing next that
+are **not** part of the adoption, which is why they are offered rather than taken:
+each one either costs real CI time or changes code this job deliberately did not
+touch.
+
+Ask once, as a single multi-select question, and do none of them unattended:
 
 1. **Recheck the implementation** — re-read this prompt against the merged
-   result, step by step, and report which of the 24 are genuinely done, which are
+   result, step by step, and report which of the 25 are genuinely done, which are
    partial, and which were skipped. Independent of your own report above.
 2. **Set up linting as a commit hook** — install `.githooks/pre-commit`, wire
    `git config core.hooksPath .githooks`, and ask whether to run it across the
@@ -1216,6 +1290,25 @@ single multi-select question; do none of them unattended:
 4. **Full code review** — the module's own C, not just the CI: memory safety,
    parser boundaries, error paths, concurrency. Out of scope for the adoption
    job, which is exactly why it is offered here.
+5. **Optimise or kick off the CI workflows** — the scheduled lanes (`ci-deep.yml`
+   monthly, `bump.yml` weekly) have not run yet on a freshly adopted module, so
+   nothing has proven they work outside the PR lane. Offer to trigger them now
+   (`gh workflow run`) rather than discovering a broken cron in four weeks, and
+   to re-check step 16's lane topology against the wall-clock the merged suite
+   actually produces. State the runner cost before starting: a deep run is long,
+   and on a self-hosted pool it occupies slots other work needs.
+6. **Broaden the dynamic analysis** — valgrind memcheck, helgrind and the fuzz
+   targets were ported at their reference shapes and verified to fire (steps 19
+   and 21). Widening them is separate work: more fuzz targets for parse surfaces
+   named but not covered, a longer time-box, helgrind where the module has
+   genuine cross-worker state, memcheck over request shapes the soak does not
+   currently reach. Name the specific gaps you found rather than offering "more
+   fuzzing" — an unfocused increase in budget buys very little.
+7. **Increase coverage** — report the current figure and the branches gcovr shows
+   as never taken, then offer to add cases for them. Coverage stays a report, not
+   a gate (step 14): the offer is more *meaningful assertions*, each with its
+   negative control, never a higher number. If the honest answer is that the
+   remaining uncovered lines are unreachable, say that instead of offering.
 
 ---
 
@@ -1236,7 +1329,7 @@ git -C /opt/myguard/labs/nginx-skeleton-module log --oneline <anchor>..HEAD
 
 That is the candidate set; [CHANGES](../CHANGES) says what each was *for*.
 **If none of the four resolves, there is no anchor** — the target never took a
-documented adoption, so it is the 24-step job, not a forward. Do not invent one
+documented adoption, so it is the 25-step job, not a forward. Do not invent one
 from the first commit or from "HEAD minus the change I was handed"; both
 manufacture a scope that was never true.
 
@@ -1285,5 +1378,5 @@ printed, and every deliberate divergence with its reason. Remote CI green on the
 **current head** — re-check `headRefOid` before merging. Squash-merge, delete the
 branch, bump the superrepo gitlink. Record the new anchor in `index.md`.
 
-The four follow-up questions at the end of step 24 apply here too, scaled to one
+The Aftermath questions at the end of step 25 apply here too, scaled to one
 concern.
