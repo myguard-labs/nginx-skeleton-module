@@ -182,10 +182,20 @@ jobs:
       # value must therefore be validated before it is written, not merely
       # kept out of the shell's own syntax.
       #
-      # Validation is whole-buffer, not per-line: `grep -qzE '^[0-9]+$'`
+      # Validation is whole-buffer, not per-line: `grep -qzE '^[0-9]{1,5}$'`
       # anchors against the entire NUL-delimited input, whereas a plain
-      # `grep -qE '^[0-9]+$'` treats the embedded newline as a line boundary
-      # and matches the benign first line -- letting the payload through.
+      # `grep -qE` treats the embedded newline as a line boundary and matches
+      # the benign first line -- letting the payload through.
+      #
+      # The LENGTH BOUND is load-bearing, not cosmetic. `[ "$v" -lt 1 ]` does
+      # not return false on a value too large for the shell's integer type --
+      # it ERRORS. Inside `if !` / `||` that failure is consumed, so with a
+      # bare `^[0-9]+$` a 26-digit input passed the digit test, made both
+      # arithmetic comparisons fail rather than compare, and was written to
+      # $GITHUB_ENV unbounded. Five digits covers the 86400 ceiling and keeps
+      # every accepted value inside the range the next check can actually
+      # evaluate. (Caught by CodeRabbit on PR #18.)
+      #
       # Then range-check, then fail the job LOUDLY. Never silently fall back
       # to the default on a rejected value: that turns an attack into a
       # normal-looking run. printf, not echo, avoids escape-sequence surprises.
@@ -195,8 +205,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            if ! printf '%s' "${DISPATCH_FUZZ_SECS}" | grep -qzE '^[0-9]+$'; then
-              echo "::error::fuzz_seconds must be a plain decimal integer (got invalid/empty/malformed input)"
+            if ! printf '%s' "${DISPATCH_FUZZ_SECS}" | grep -qzE '^[0-9]{1,5}$'; then
+              echo "::error::fuzz_seconds must be 1-5 decimal digits (got invalid/empty/oversized input)"
               exit 1
             fi
             if [ "${DISPATCH_FUZZ_SECS}" -lt 1 ] || [ "${DISPATCH_FUZZ_SECS}" -gt 86400 ]; then
