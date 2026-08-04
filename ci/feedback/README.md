@@ -20,16 +20,22 @@ preferred form, and a file here describing a fix that could have been made is a
 worse outcome than the fix. Findings about the *target* stay with the target;
 they belong in its own `issues.md`.
 
-## One file per adoption
+## At most one file per adoption
 
 ```text
 ci/feedback/<target-module>-<YYYY-MM-DD>.md
 ```
 
 `<target-module>` is the adopting repo's name, `<YYYY-MM-DD>` the date the
-adoption finished. One file per adoption run, never appended to by a later one —
-a second run against the same module gets its own dated file, so what was true at
-each adoption stays readable.
+adoption finished. An adoption that found nothing writes no file at all; one that
+found something writes exactly one, never appending to an earlier run's. A second
+run against the same module gets its own dated file, so what was true at each
+adoption stays readable.
+
+Two adoptions of the same module finishing on the same day would collide. That
+has not happened and the fix is trivial when it does — suffix the second with
+`-2`, or the PR number. Do not preemptively encode a run ID into every filename
+to prevent it; the directory is meant to be readable by name.
 
 Each finding in it states:
 
@@ -46,5 +52,6 @@ status field. Acting on one means opening a normal PR against the affected file
 and deleting the entry in the same commit — a file that outlives the thing it
 describes reads as a live problem forever.
 
-An adoption that found nothing writes no file. Do not manufacture a finding to
-have something to send.
+Do not manufacture a finding to have something to send. An empty directory after
+an adoption is a real result about the skeleton, and a fabricated entry destroys
+it.
