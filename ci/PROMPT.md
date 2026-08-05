@@ -381,7 +381,12 @@ one — both green, both proving nothing about shipped code.
 ```sh
 ls src/*_scan.c src/*_scan.h 2>/dev/null || ls *_scan.c *_scan.h
 grep -n 'ngx_http_request_t\|r->\|ngx_http_' $(ls src/*_scan.c 2>/dev/null || ls *_scan.c)
-grep -n '_scan\.c' ci/fuzz/build.sh ci/tests/unit/run.sh 2>/dev/null
+# ci/tests/unit/run.sh is the REFERENCE's entry point, not a given for the
+# target. Fall back to whatever step 6's baseline proved is the target's real
+# unit entry point (e.g. ci/fuzz/run.sh, a Makefile check target, a bare
+# ci/tests/*.sh) — grepping a path the target never had is silent, not "no hit".
+UNIT_ENTRY="$(ls ci/tests/unit/run.sh 2>/dev/null || echo '<baseline-proven entry point>')"
+grep -n '_scan\.c' ci/fuzz/build.sh "$UNIT_ENTRY" 2>/dev/null
 git diff --stat HEAD~1 -- ci/fuzz/ngx_stubs.c               # did stubs grow?
 ```
 
@@ -396,6 +401,14 @@ Three states, and each has a different next move:
   beyond the reference's set is a dependency that should have been refactored out.
   Step 5 runs.
 - **No seam** — decision logic is inline in `*_module.c`. Step 5 runs.
+- **Seam is clean via a verbatim-extraction script** — a `ci/fuzz/extract_*.sh`
+  (or equivalent) that copies the decision bytes out of the real source into a
+  generated `.inc`, cross-checked against a `#define`/checksum so drift between
+  the copy and the original fails the build. This is **CLEAN, not nominal** — the
+  drift gate is what a hand-written seam gets from "no nginx types in the
+  signature" for free. Treat it like the first bullet: skip step 8, go to step 9,
+  and confirm the drift check itself is exercised (a PR that changes the source
+  without touching the `.inc` must fail).
 
 A fourth outcome is legitimate and must be stated rather than skipped silently:
 the module genuinely has **no decision logic to separate**, a pure plumbing module
@@ -437,10 +450,12 @@ Same PR as 8. The extraction is worthless until the things that link across it
 name the real file.
 
 ```sh
-grep -n '_scan\.c' ci/fuzz/build.sh ci/tests/unit/run.sh 2>/dev/null
+# ci/tests/unit/run.sh is the reference's path; use step 7's UNIT_ENTRY (the
+# target's real unit entry point per the baseline) if the target has no such file.
+grep -n '_scan\.c' ci/fuzz/build.sh "${UNIT_ENTRY:-ci/tests/unit/run.sh}" 2>/dev/null
 ```
 
-Both `ci/tests/unit/run.sh` and `ci/fuzz/build.sh` must compile the target's real
+Both the target's real unit entry point and `ci/fuzz/build.sh` must compile the target's real
 `*_scan.c` — the same source, not a second copy. Whichever of the two the target
 already has gets pointed at the seam in this PR; the rest follow the material into
 `ci/` at step 10. If the target has **neither** yet, say so: the seam is verified by
@@ -1192,7 +1207,10 @@ decays quietly as handler code is added. Re-run step 7's probes:
 
 ```sh
 grep -n 'ngx_http_request_t\|r->\|ngx_http_' src/*_scan.c   # -> expect no hits
-grep -n '_scan\.c' ci/fuzz/build.sh ci/tests/unit/run.sh
+# UNIT_ENTRY does not carry over from step 7's session. Re-derive it: the
+# target's real unit entry point per the baseline, or ci/tests/unit/run.sh
+# only if the target actually has that file.
+grep -n '_scan\.c' ci/fuzz/build.sh "$UNIT_ENTRY"
 git log --oneline -- ci/fuzz/ngx_stubs.c                    # stubs grown since 4?
 ```
 
