@@ -18,10 +18,9 @@ Give the target the reference's **layout, gates, workflow set, badge row, linter
 entry point and conventions**, expressed over the target's own code and tests.
 
 **63 steps in 7 phases.** Steps are numbered 1–63 continuously and referenced by
-number throughout. **A step is a grind unit, not a PR** — it is sized so a cheap
-model can do it with this file and nothing else: one input set, one acceptance
-check, one thing to hold in your head at a time. Several consecutive steps
-usually land as one PR; the PR column below says how many.
+number throughout. **A step is a grind unit, never a PR boundary** — it carries
+one input set and one acceptance check. Consecutive steps land through the fixed
+PR groups below.
 
 | Phase | Steps | What it is | PRs |
 |---|---|---|---|
@@ -29,12 +28,13 @@ usually land as one PR; the PR column below says how many.
 | 2 | 7–9 | the decision seam — the one C refactor | 1 |
 | 3 | 10–15 | layout and runner identity | 2 |
 | 4 | 16–38 | workflows, tests, fuzzing, caching, linter, lanes | 8 |
-| 5 | 39–48 | depth pass — would any of it catch anything? | 1–8 |
-| 6 | 49–54 | close out: skeleton feedback, post-adoption checks, docs, report | 1–3 |
-| 7 | 55–63 | aftermath — offered, not taken | 0 |
+| 5 | 39–48 | depth pass — would any of it catch anything? | 1 |
+| 6 | 49–54 | close out: skeleton feedback, post-adoption checks, docs, report | 2 target + 1 reference |
+| 7 | 55–63 | mandatory aftermath | up to 3 |
 
-Phase 5 runs only after every phase-4 step has merged. Phase 7 is the only phase
-that is not part of the job: it is offered at the end and done only if asked.
+Phase 5 runs only after every phase-4 group has merged. Phase 7 always runs after
+migration, forwarding, or a no-op. An inapplicable aftermath step needs evidence;
+it is never skipped merely because no full migration was required.
 
 **Which steps share a PR** — the boundaries are fixed; do not merge a partial group:
 
@@ -51,11 +51,26 @@ that is not part of the job: it is offered at the end and done only if asked.
 | 9 | 30 | coverage |
 | 10 | 31–35 | caching and the linter gate |
 | 11 | 36–38 | lane topology |
-| 12+ | 39–48 | depth pass — one PR each, or one short series |
+| 12 | 39–48 | depth pass — one grouped verification/fix PR |
 | — | 49 | the skeleton feedback PR (against the reference, not the target) |
 | 13 | 50–51 | post-adoption checks |
 | 14 | 52–54 | docs, memory, report |
-| — | 55–63 | aftermath — offered as a multi-select, not taken |
+| 15 | 55–58 | aftermath recheck and review |
+| 16 | 59–61 | scheduled, dynamic-analysis, and coverage aftermath |
+| 17 | 62–63 | residue and gitlink closeout; no empty target PR |
+
+### Model floor
+
+Every step uses `[sonnet or a stronger model]` unless tagged `[opus]`. Do not
+delegate any step to Haiku. The controller sends a worker only the execution
+rules, current PR-group row, current step, target inventory, and prior result.
+The controller, not the worker, owns the shared group branch and PR.
+
+Every run starts at step 1, including a full, partial, abandoned, or claimed
+complete migration/import/adoption. After inventory, evaluate each group in
+numeric order. Cross it off only when every step's Acceptance condition is
+proven against the current tree; otherwise complete it through that group's one
+PR. Never resume where an earlier attempt claimed it stopped.
 
 **This is a merge, not an install.** Assume the target already has CI somebody
 relies on. Measured across the eight derived modules on 2026-08-03: every one
@@ -74,14 +89,17 @@ Three rules outrank every step:
    the skeleton (step 49). A rollout that reduces coverage is a regression
    wearing a standardisation PR.
 3. **Nothing self-hosted is portable.** `builder02` is a myguard machine and no
-   linter here will tell an adopter they copied it. Step 7 settles it before any
+   linter here will tell an adopter they copied it. Step 13 settles it before any
    workflow is ported.
 
 Standing constraints, all steps:
 
-- **One PR per step that lands code**, in order, each independently revertible
-  and independently green. Do not open the next until the previous merges —
-  later ones move files the earlier ones edit.
+- **One branch and at most one target PR per fixed group, never per step.** Start
+  the group branch at its first applicable step; accumulate its steps as
+  independently reviewable commits; open/update one group PR; merge only after
+  every applicable step in the group is complete. A group with no tracked target
+  change records evidence and opens no empty PR. Step 49's reference-repository
+  PR and necessary superrepo gitlink commits are explicit cross-repo exceptions.
 - **Remote CI green before merge**, workflows enabled — see step 2 on what you
   may not do to get there.
 - **Every gate must be seen red once, in the target.** A probe run against the
@@ -95,7 +113,7 @@ Standing constraints, all steps:
   blocks the gate you came to install.
 - Comments explain **why**, at the decision, in the target's voice. A rule with
   no recorded reason gets deleted by the next person who finds it inconvenient.
-- **Keep the phase todo list live.** Step 3 writes it; every step after keeps it
+- **Keep the phase todo list live.** Step 6 writes it; every step after keeps it
   accurate — one item `in_progress`, items closed on merge, not on push.
 
 ## Work autonomously — record, do not ask
@@ -115,7 +133,7 @@ Two files carry what you cannot act on. Create both at the start of step 1:
 - **`$SCRATCH/skeleton-findings.md`** — anything about the REFERENCE: a bug in a
   ported script, a rule that could not be followed as written, a gate the target
   has that the skeleton lacks (rule 2), a step in this prompt that was wrong or
-  ambiguous. Step 23 turns this into a PR against the skeleton.
+  ambiguous. Step 49 turns this into a PR against the skeleton.
 
 `$SCRATCH` is the session scratchpad directory, or `$(mktemp -d)` if none.
 One entry per finding: what, the `file:line`, what you did instead, and what a
@@ -162,11 +180,10 @@ finding, and the honest end state of a step.
 
 # Phase 1 — Establish what you are working with
 
-Read-only. Three steps: prove you can work here, measure what is there, and
-record the baseline everything downstream is compared against. Nothing is
-committed in this phase.
+Read-only. Six steps: prove you can work here, inventory and score it, then record
+the baseline and grouped run plan. Nothing is committed in this phase.
 
-## 1 — Set up the run
+## 1 — Set up the run `[sonnet or a stronger model]`
 
 Create the two findings files and confirm the repo is workable.
 
@@ -190,19 +207,26 @@ Then:
 SCRATCH=${SCRATCH:-$(mktemp -d)}
 printf '# Adoption findings — <TARGET>\n\n' > "$SCRATCH/adoption-findings.md"
 printf '# Skeleton findings — from <TARGET> adoption\n\n' > "$SCRATCH/skeleton-findings.md"
+git status --porcelain=v1 -z > "$SCRATCH/initial-status.z"
+git diff --binary > "$SCRATCH/initial-worktree.patch"
+git diff --cached --binary > "$SCRATCH/initial-index.patch"
+git ls-files --others --exclude-standard -z | sort -z | xargs -0r sha256sum \
+    > "$SCRATCH/initial-untracked.sha256"
 ```
 
 Record in `adoption-findings.md`: the base branch, and every dirty path from
-`git status --porcelain` so a later diff cannot be blamed on you.
+`git status --porcelain` so a later diff cannot be blamed on you. The four
+no-write snapshots above preserve both the path set and contents; step 62
+recreates and compares them. Keep them in `$SCRATCH`, never the target.
 
 **Hard stop only if** the directory is not a git repo, or `gh` cannot
 authenticate against this remote. Both are reported and the run ends. Anything
 else found here is a finding.
 
-**Acceptance:** both findings files exist; base branch recorded; you know the
-remote.
+**Acceptance:** both findings files and all four dirt snapshots exist; base
+branch recorded; you know the remote.
 
-## 2 — Scope, git safety, rollback
+## 2 — Scope, git safety, rollback `[sonnet or a stronger model]`
 
 Read once, applies to every later step.
 
@@ -215,8 +239,8 @@ Two writes outside the target are expected, and only these two:
 
 - **The target's own memory mirror**, `memory/labs/<name>/` or
   `memory/eilandert/<name>/` — where the inventory, issues and lessons go.
-- **The superrepo gitlink**, once per merged step, if `<TARGET>` is a myguard
-  submodule. Submodule PR merges first, then the gitlink bump lands signed on the
+- **The superrepo gitlink**, once per merged group, if `<TARGET>` is a myguard
+  submodule. The target PR merges first, then the gitlink bump lands signed on the
   superrepo's `master`. An external target has no gitlink and no mirror; skip
   both and say so.
 
@@ -226,7 +250,7 @@ Do not commit it, revert it, or `git checkout` over it.
 Git safety, non-negotiable:
 
 - **Never `push --force` to a shared branch**, and never to the default branch
-  under any circumstance. Rewriting a step branch you alone own, before review,
+  under any circumstance. Rewriting a group branch you alone own, before review,
   is the only acceptable case — and `--force-with-lease`, never `--force`.
 - **Never `git checkout .`, `git reset --hard`, or `git clean -fd`** to undo your
   own mistake. They erase whatever else was in the tree. Revert the specific file.
@@ -234,19 +258,20 @@ Git safety, non-negotiable:
   PATs, no `Bearer` strings, not even revoked ones. Reference via
   `${{ secrets.X }}` or an env var. A workflow that needs a credential the target
   does not have is a finding, not a thing to invent.
-- **The default branch is not a work surface.** Every step that lands code gets
-  its own branch off the current default, merged by PR. Nothing is committed
-  straight to `master`/`main`, including "trivial" doc fixes.
-- One step per branch, named for it. Delete the branch after merge.
+- **The default branch is not a work surface.** Every group that lands code gets
+  one branch off the current default and one PR. Nothing is committed straight
+  to `master`/`main`, including "trivial" doc fixes.
+- One group per branch, named for the group. Delete it after merge. Workers add
+  commits to that branch; they never create step branches or step PRs.
 
-**Rollback.** Each step is one PR precisely so it can be reverted alone. If a
-merged step turns out wrong, `git revert` the merge commit on its own branch and
-PR that — do not force-push over history that others have pulled, and do not "fix
+**Rollback.** Each group is one PR and one revert boundary. Keep its step commits
+independently reviewable, but revert the merged group through one new PR. Do not
+force-push over history that others have pulled, and do not "fix
 forward" by stacking a second broken change on the first.
 
 **Acceptance:** nothing to produce; this step is read and obeyed.
 
-## 3 — Run the inventory probes
+## 3 — Run the inventory probes `[sonnet or a stronger model]`
 
 Steps 3–6 are the measurement everything downstream is planned from. All
 read-only, nothing committed. This one just collects the raw output; 4 scores it,
@@ -274,14 +299,16 @@ gh run list -R <owner>/<module> --limit 20 \
 **Acceptance:** every command above run, with its output kept — steps 4–6 all read
 from it and re-running against a moved tree gives different answers.
 
-## 4 — Score the three markers
+## 4 — Score the three markers `[sonnet or a stronger model]`
 
 **Is the target already standardised?** Score three markers: a full `ci/` layout
 (`ci/t`, `ci/tools`, `ci/linter`, `ci/fuzz`); `ci.yml` as the sole
 `pull_request` entry point; `ci/linter/run-all.sh` plus a tracked
-`.githooks/pre-commit`. **3/3 → this is not the job**; skip to "Forwarding one
-later change" at the end. Anything less → work the steps, taking only the ones
-the target is missing.
+`.githooks/pre-commit`. A 3/3 score makes the target a forward candidate; it does
+not prove the migration groups complete. Evaluate those groups in order. If any
+applicable Acceptance condition is unmet, use the migration route. Only when all
+are proven already done or not needed may the run use "Forwarding one later
+change" at the end. Anything below 3/3 starts the migration route immediately.
 
 Do not infer the score from the first marker you check. Two derived modules have
 a `ci/` directory and still score 0/3 — `ci/` is the cheapest half of step 10 and
@@ -290,7 +317,7 @@ the most misleading signal in the set. **No `ci.yml` settles it on its own.**
 **Acceptance:** the score, 0/3 to 3/3, with the evidence for each marker named
 separately. A score asserted without three pieces of evidence is a guess.
 
-## 5 — Record the inventory
+## 5 — Record the inventory `[sonnet or a stronger model]`
 
 Record in the memory mirror (`/opt/myguard/memory/labs/<module-name>/index.md`
 for ours; an external target has no mirror — create one only if the work is
@@ -315,7 +342,7 @@ ongoing):
 the per-workflow wall-clock table are the two that later steps cannot reconstruct
 once files have moved.
 
-## 6 — Baseline the suite, then write the run plan
+## 6 — Baseline the suite, then write the run plan `[sonnet or a stronger model]`
 
 **Baseline the target green.** Run whatever suite it has and record the result.
 If it is already red, that is a finding for `adoption-findings.md` and a fact
@@ -323,32 +350,40 @@ every later PR body must state — otherwise the first step that lands code
 inherits blame for a failure that predates it. Do not stop; do not fix it.
 
 **Emit the run plan as a todo list.** As the last act of this step, call `TodoWrite`
-once with **one item per PR group** from the table in "The job" — not one per
-step (49 items is noise) and not one per phase (too coarse to show progress
-through phase 4). Drop groups the 3/3 score has already settled. Phase 1 is marked
-`completed` in the same call — it is done by the time you write it. Wording is
+once with **exactly one item per PR group** from the table in "The job" — not one
+per step and not one per phase. Keep every group in the list. Cross off a group
+as `already done` or `not needed` only when current-tree evidence proves every
+step in it; never infer completion from the 3/3 score alone. Phase 1 is marked
+`completed` in the same call. Wording is
 `PR<k>: steps <a>-<b> — <the work, in the target's own terms>`, so the list reads
 as this run's plan and not as a copy of the table:
 
 ```text
 [x] Steps 1-6 — findings files, inventory, score, baseline
-[x] PR1: steps 7-9 — decision seam already clean, verified by mutation, no PR needed
+[x] PR1: steps 7-9 — already done: clean seam proven by current evidence
 [~] PR2: steps 10-12 — ci/ move + path climbs + src/ creation
 [ ] PR3: steps 13-15 — runner identity (three files, both probes)
 [ ] PR4: steps 16-21 — orchestrator demotion + workflow set
-[ ] PR5-9: steps 22-30 — badges, test layers, fuzzing, coverage
-[ ] PR10-11: steps 31-38 — caching, linter gate, lane topology
-[ ] Steps 39-48 — depth pass with measurements
-[ ] Steps 49-54 — skeleton feedback PR, post-adoption checks, docs and report
+[ ] PR5: step 22 — badges and CI docs
+[ ] PR6: steps 23-24 — unit layer
+[ ] PR7: steps 25-26 — live-server layer
+[ ] PR8: steps 27-29 — fuzzing and sanitizer neighbours
+[ ] PR9: step 30 — coverage report
+[ ] PR10: steps 31-35 — caching and linter gate
+[ ] PR11: steps 36-38 — lane topology
+[ ] PR12: steps 39-48 — depth verification and fixes
+[ ] REF49: step 49 — skeleton findings PR, or evidence-based no-op
+[ ] PR13: steps 50-51 — post-adoption checks
+[ ] PR14: steps 52-54 — docs, memory, route report
+[ ] PR15: steps 55-58 — aftermath recheck and review
+[ ] PR16: steps 59-61 — scheduled/dynamic/coverage aftermath
+[ ] PR17: steps 62-63 — residue and gitlink closeout
 ```
 
-Collapsing several PR groups into one line (as PR5-9 above) is fine where they are
-routine; split a line back out the moment one of them is where you actually are.
-
-Keep it current for the rest of the run: exactly one item `in_progress`, each
-flipped to `completed` when its PR merges — not when the branch is pushed. The
-list is the only place the user sees how far along a 54-step job is; a stale one
-is worse than none.
+Step 49's reference-repository PR is recorded under its own skeleton-feedback
+line; it is not merged into a target group. Keep the todo current: exactly one
+group is `in_progress`; flip it to `completed` only when its PR merges, or when
+every step is evidence-proven already done/not needed and no PR is required.
 
 **Acceptance:** the baseline result recorded — pass, or the named failing tests
 — and the todo list written with steps 1–6 already closed.
@@ -359,15 +394,15 @@ is worse than none.
 
 Three steps, one PR, alone in its phase because this is the only C refactor in the
 job and every later gate links across it. A target that already has a clean seam
-passes through 4 and stops; one that does not cannot produce a meaningful unit or
-fuzz result until 5 and 6 land.
+marks group PR1 already done with evidence; one that does not cannot produce a
+meaningful unit or fuzz result until steps 8–9 land together.
 
 Phase 2 comes before the `ci/` move — the extraction is a C refactor independent
 of where the test material lives, and everything downstream links across it.
 
-## 7 — Probe: which of the three states is the target in?
+## 7 — Probe: which of the three states is the target in? `[sonnet or a stronger model]`
 
-Read-only, and it decides whether 5 and 6 run at all.
+Read-only, and it decides how steps 8–9 run.
 
 > **Decision logic goes in `*_scan.c`, taking `(u_char *, size_t)`. Only
 > `ngx_http_request_t` plumbing stays in `*_module.c`.**
@@ -399,8 +434,8 @@ Three states, and each has a different next move:
   nginx, so the fuzz and unit builds either fail or quietly link a stubbed
   variant. **Growth in `ci/fuzz/ngx_stubs.c` is the tell** — every stub added
   beyond the reference's set is a dependency that should have been refactored out.
-  Step 5 runs.
-- **No seam** — decision logic is inline in `*_module.c`. Step 5 runs.
+  Step 8 runs.
+- **No seam** — decision logic is inline in `*_module.c`. Step 8 runs.
 - **Seam is clean via a verbatim-extraction script** — a `ci/fuzz/extract_*.sh`
   (or equivalent) that copies the decision bytes out of the real source into a
   generated `.inc`, cross-checked against a `#define`/checksum so drift between
@@ -413,12 +448,12 @@ Three states, and each has a different next move:
 A fourth outcome is legitimate and must be stated rather than skipped silently:
 the module genuinely has **no decision logic to separate**, a pure plumbing module
 whose only work is `ngx_http_*` calls. Say so with the `file:line` that shows it,
-record that steps 23 and 27 are correspondingly thin, and skip 5 and 6.
+record that steps 23 and 27 are correspondingly thin, and skip steps 8–9.
 
 **Acceptance:** the state named, with the grep output that establishes it, and —
 where the seam already exists — whether the fuzz and unit builds currently name it.
 
-## 8 — Extract the seam
+## 8 — Extract the seam `[sonnet or a stronger model]`
 
 Only if step 7 found "nominal" or "no seam". This is a **move, not a rewrite**.
 
@@ -428,7 +463,7 @@ Only if step 7 found "nominal" or "no seam". This is a **move, not a rewrite**.
 2. `*_module.c` keeps the handler, directive parsing, config merging and every
    `ngx_http_*` call, and calls into the seam.
 
-**Do not change behaviour while extracting.** The baseline suite from step 3 must
+**Do not change behaviour while extracting.** The baseline suite from step 6 must
 stay green across it — run it wherever it currently lives, since `ci/` does not
 exist yet. A behavioural fix that rides along makes any later bisect ambiguous; a
 real bug found while extracting goes to `adoption-findings.md`.
@@ -439,12 +474,12 @@ moves under `src/` at step 12. Do not create `src/` here — that split would la
 the same C in two commits.
 
 **Acceptance:** no nginx request types inside `*_scan.c`; the module still builds;
-and the step 3 baseline suite is **unchanged** — every test that passed at step 3
-still passes, with no behavioural diff. A test that was already red at step 3
+and the step 6 baseline suite is **unchanged** — every test that passed at step 6
+still passes, with no behavioural diff. A test that was already red at step 6
 stays red and is named in the PR body; do not fix it here and do not treat it as
 a reason to park the step.
 
-## 9 — Wire the two consumers
+## 9 — Wire the two consumers `[sonnet or a stronger model]`
 
 Same PR as 8. The extraction is worthless until the things that link across it
 name the real file.
@@ -473,10 +508,10 @@ grep; or an explicit line saying which consumers do not exist yet.
 # Phase 3 — Layout and identity
 
 Two things that must be settled before a single workflow is ported: where the
-material lives, and whose machines it names. Six steps, two PRs — 7–9 are one PR,
-10–12 are the other.
+material lives, and whose machines it names. Six steps, two PRs — 10–12 are one
+PR, 13–15 the other.
 
-## 10 — Move CI material under `ci/`
+## 10 — Move CI material under `ci/` `[sonnet or a stronger model]`
 
 Target layout, matching the reference:
 
@@ -488,7 +523,7 @@ ci/
   vendor/nginx-tests/    upstream suite submodule
   tools/                 ci-build.sh, nginx-tree.sh, test_runtime.py,
                          coverage.sh, max-port.sh, ci-hang-guard.sh, soak.sh
-  linter/                local lint gate (steps 31–35)
+  linter/                local lint gate (steps 32–35)
 ```
 
 - `git mv`, never copy-then-delete — blame must survive. Verify with
@@ -503,7 +538,7 @@ ci/
 **Acceptance:** local `prove` green, fuzz targets still build
 (`ci/fuzz/build.sh`), `git log --follow` shows history on a moved file.
 
-## 11 — Fix every path that climbed out
+## 11 — Fix every path that climbed out `[sonnet or a stronger model]`
 
 Same PR as step 10, separated here because it is the half that silently fails.
 
@@ -528,7 +563,7 @@ A missed climb compiles fine and silently tests the wrong tree.
 **Acceptance:** no path outside `ci/` refers to `t/`, `tests/` or `fuzz/`; the
 module still builds; `prove` still green.
 
-## 12 — Create `src/` if the target has none
+## 12 — Create `src/` if the target has none `[sonnet or a stronger model]`
 
 Same PR as 10 and 11. Skip if `src/` already exists — but check, do not assume: two
 of eight derived modules keep `ngx_http_<name>_module.c` (sometimes plus
@@ -542,11 +577,17 @@ run out of every one of them while they check nothing.
 Move the C under `src/` — including the seam files from steps 8–9 — and update
 nginx's module `config` in the **same commit**, or the module stops building.
 
-**Acceptance:** the empty-selection proof — a `malloc`/`strcpy` probe file where
-the module's real C now lives must make `LINT_ONLY="c nginx"` exit 1. A green run
-on that probe means the selection is still empty and the move did not take.
+The linter is not ported until step 32. Do not call it here. Record the deferred
+empty-selection probe in the group todo: immediately after step 32, a
+`malloc`/`strcpy` probe beside the module's real C must make
+`LINT_ONLY="c nginx" ci/linter/run-all.sh` exit 1 before PR10 can merge.
 
-## 13 — Runner identity: rewrite every `runs-on`
+**Acceptance now:** every module `.c`/`.h` is listed by
+`git ls-files 'src/*.[ch]'`, nginx's module `config` resolves those paths, and a
+clean module rebuild succeeds. **Deferred acceptance at step 32:** the recorded
+empty-selection probe exits 1; green means the selection is still empty.
+
+## 13 — Runner identity: rewrite every `runs-on` `[sonnet or a stronger model]`
 
 Steps 13–15 are one PR, and they come before a single workflow is ported.
 `builder02` is the label of **a physical machine myguard owns**, spread across
@@ -589,8 +630,8 @@ runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || from
 runs-on: ubuntu-latest
 ```
 
-**Order matters and it is the reason this is three steps: workflows first (10),
-the two policy files second (11), the probes last (12).** The gate is the last
+**Order matters and it is the reason this is three steps: workflows first (13),
+the two policy files second (14), the probes last (15).** The gate is the last
 thing to change, so its findings are about what remains.
 
 This step is item 1 of that order: **every `runs-on` in `.github/workflows/`**.
@@ -610,37 +651,41 @@ variable, both of which a fork controls. Then read steps 36–38 in full.
 **Acceptance:** no `runs-on` in `.github/workflows/` names a label the target does
 not own; `actionlint` still parses every workflow.
 
-## 14 — Runner identity: the two policy files
+## 14 — Runner identity: the two policy files `[sonnet or a stronger model]`
 
-Same PR, after 10 and before 12. Two files, and the second is the one this whole
+Same PR, after 13 and before 15. Two files, and the second is the one this whole
 group exists for:
 
-1. `.github/actionlint.yaml` — delete the `self-hosted-runner:` block entirely;
+1. `.github/actionlint.yaml` — if present, delete the `self-hosted-runner:` block;
    declaring labels you never use trains the next person to add one.
-2. `ci/linter/workflow_policy.py` — reduce `TRUST_SPLITS` to an empty frozenset.
-   `HOSTED.fullmatch` covers every selector now, and an empty approved-set makes
-   any future self-hosted selector a finding rather than a silent pass.
+2. `ci/linter/workflow_policy.py` — if present, reduce `TRUST_SPLITS` to an empty
+   frozenset. `HOSTED.fullmatch` covers every selector now, and an empty
+   approved-set makes any future self-hosted selector a finding rather than a
+   silent pass.
 
-**Do this after 10, never before.** Emptying `TRUST_SPLITS` while the workflows
+If either file does not exist, do not port the linter early. Record its hosted-only
+state in the group todo and apply it when step 32 creates the file.
+
+**Do this after 13, never before.** Emptying `TRUST_SPLITS` while the workflows
 still carry self-hosted selectors produces one finding per selector: doing it in
 the reference produced **16 findings** — the probe plus all 15 real selectors.
 Expected intermediate state, and exactly the noise that buries the one finding you
 are hunting at step 15.
 
-**Acceptance:** `TRUST_SPLITS` is empty (or names only labels the target owns);
-no `self-hosted-runner:` block survives in `actionlint.yaml`.
+**Acceptance:** each existing policy file has the target-owned state above; each
+missing file has the same state recorded for step 32.
 
-## 15 — Runner identity: verify, both directions
+## 15 — Runner identity: verify, both directions `[sonnet or a stronger model]`
 
 Same PR, last. A grep proving `builder02` is absent says nothing about whether the
 *checker* still approves it.
 
 ```sh
 # 1. no myguard runner identity survives anywhere
-grep -rn 'builder02\|b02lxc' .github/ ci/linter/workflow_policy.py
+grep -rn 'builder02\|b02lxc' .github/ ci/linter/workflow_policy.py 2>/dev/null
 #    -> expected: no hits for a hosted-only adopter
 
-# 2. the checker actually rejects the reference's selector
+# 2. after step 32, the checker rejects the reference's selector
 cat > .github/workflows/_probe.yml <<'EOF'
 name: probe
 on:
@@ -656,6 +701,11 @@ LINT_ONLY=ci-runners ci/linter/run-all.sh   # MUST exit 1 in the target
 rm .github/workflows/_probe.yml
 ```
 
+If `ci/linter/run-all.sh` does not exist yet, do not call it or port it early.
+Record probe 2 as deferred and run it immediately after step 32, before PR10
+merges. Probe 1 and `actionlint` over the edited workflows are the current-group
+checks.
+
 **Probe 2 going green in the target is the bug this group exists for** — it means
 `TRUST_SPLITS` was copied unedited. Go back to step 14 and fix
 `workflow_policy.py`; do not delete the probe.
@@ -665,7 +715,9 @@ approved selector *here*, in our repo, on our machine. The probe is a statement
 about the TARGET. Running it in the reference to "check the probe works" proves
 nothing.
 
-**Acceptance:** probe 1 empty, probe 2 red, both outputs pasted in the PR body.
+**Acceptance now:** probe 1 empty and `actionlint` parses every edited workflow.
+**Deferred acceptance at step 32:** probe 2 is red; paste both outputs in the
+relevant PR bodies.
 
 ---
 
@@ -675,17 +727,17 @@ Twenty-three steps, eight PRs. The bulk of the job: entry points, the workflow s
 badges, test layers, coverage, fuzzing, caching, the linter gate and lane
 topology.
 
-The demotion (13–15) is the highest-risk sequence in the job. It is three steps
+The demotion (16–18) is the highest-risk sequence in the job. It is three steps
 because it is three *states of the repo*, each verified before the next — doing it
 in one pass is how a repo ends up with no PR gate at all. Do the demotion before
 adding any workflow: adding one to a repo that still has six triggers multiplies
 the problem.
 
 The target has N workflows each carrying `pull_request:` (measured: three to six,
-with `workflow_call:` nowhere). End state after 15: exactly one `pull_request:`,
+with `workflow_call:` nowhere). End state after 18: exactly one `pull_request:`,
 in `ci.yml`, everything else reachable only as a `workflow_call:` member.
 
-## 16 — Add `workflow_call:` to every member
+## 16 — Add `workflow_call:` to every member `[sonnet or a stronger model]`
 
 Add `workflow_call:` to each member **while leaving its `pull_request:` in
 place**. It still runs standalone, so the target keeps working and this step
@@ -694,7 +746,7 @@ cannot break anything.
 **Acceptance:** every member workflow carries both triggers; `actionlint` clean;
 a PR run shows the same set of checks as before, no more and no fewer.
 
-## 17 — Add `ci.yml` and prove the double-run
+## 17 — Add `ci.yml` and prove the double-run `[sonnet or a stronger model]`
 
 Add `ci.yml` calling every member. Verify **on a real PR** that each member runs
 *twice* — once standalone, once called. Two runs is the expected intermediate
@@ -707,7 +759,7 @@ green because the check that would have failed never ran.
 **Acceptance:** the run list showing every member twice, pasted in the PR body. A
 member that ran once was never called — fix `ci.yml` and re-run before step 18.
 
-## 18 — Remove `pull_request:` from every member
+## 18 — Remove `pull_request:` from every member `[sonnet or a stronger model]`
 
 One commit. Now each member runs once.
 
@@ -715,7 +767,7 @@ One commit. Now each member runs once.
 the repo with *no* PR gate at all. Do not take it until step 17 showed **every**
 member running twice — a member that ran once was never called, and removing its
 own trigger silences it completely. If even one did not double-run, fix `ci.yml`
-and repeat 14; do not proceed on the theory that it will resolve itself. Should
+and repeat step 17; do not proceed on the theory that it will resolve itself. Should
 the merged result gate nothing, revert this PR first and diagnose after — an
 ungated default branch is not a state to debug in place.
 
@@ -735,14 +787,14 @@ reference are schedule-driven and not members of the PR lane.
 `grep -lE '^\s*pull_request:' .github/workflows/*.yml`, and a PR run in which
 every member ran exactly once.
 
-## 19 — Port the workflow set
+## 19 — Port the workflow set `[sonnet or a stronger model]`
 
 Same PR as 16–18, separate commit.
 
 | Workflow | What it must gate in the target |
 |---|---|
 | `ci.yml` | orchestrator; the ONLY `pull_request` entry point |
-| `lint.yml` | the `ci/linter/` gate (steps 31–35), hosted runner |
+| `lint.yml` | the `ci/linter/` gate (steps 32–35), hosted runner |
 | `build-test.yml` | build, `.so` dlopens, bad config rejected, `-T` survives merged multi-context config, `-Werror`, Test::Nginx, ASan+UBSan |
 | `asan.yml` | ASan/UBSan request-storm soak, static `--add-module` |
 | `fuzzing.yml` | replay every past crash, then fresh fuzz |
@@ -756,12 +808,12 @@ Also port, adapting paths: `.github/versions.env` (single source of truth for
 version **and sha256** pins — tarballs verified by digest, not version string),
 `.github/scripts/{load-versions,compute-versions,fetch-verify}.sh`,
 `.github/actions/build-cache/`, and `.github/actionlint.yaml` (subject to steps
-10–12).
+13–15).
 
 **Acceptance:** `actionlint` clean; every workflow in the table above either
 present or explicitly accounted for as not applicable to this target.
 
-## 20 — Triage the workflows the reference does not have
+## 20 — Triage the workflows the reference does not have `[sonnet or a stronger model]`
 
 Same PR. Rule 2 lives here — this is the step that decides whether the rollout
 reduces coverage.
@@ -781,7 +833,7 @@ have compared the actual checks; a same-named workflow often gates less.
 **Acceptance:** every extra workflow classified keep/fold with a written reason,
 and every "keep" queued for a badge at step 22.
 
-## 21 — Port bands
+## 21 — Port bands `[sonnet or a stronger model]`
 
 Same PR. Test::Nginx binds `TEST_NGINX_PORT`, default 1984, and nothing
 arbitrates it. A self-hosted host runs several runner slots against one network,
@@ -800,9 +852,9 @@ whose driver picks its own free port is already immune; leave it and say so.
 `max-port.sh` runs **before** the first step that binds — quote the step order
 from the YAML, not the presence of the verify step.
 
-## 22 — Badges and the `## CI` table
+## 22 — Badges and the `## CI` table `[sonnet or a stronger model]`
 
-Own PR — small, and it is the one thing every reader sees first.
+Group PR5 is a singleton because this is the one thing every reader sees first.
 
 ```text
 Build&Test, Security Scanners, Fuzzing, Valgrind, CodeQL, A/UBSan, CI Deep
@@ -829,7 +881,7 @@ differences only.
 CI table and badge row in identical order and spelling; `lint-docs-drift.sh`
 green in both directions.
 
-## 23 — Unit tests over the real decision TU
+## 23 — Unit tests over the real decision TU `[sonnet or a stronger model]`
 
 First of the four test layers; one PR with step 24. **Reuse the reference's
 harness; do not re-derive it.**
@@ -858,7 +910,7 @@ goal; every *reachable* branch having a meaningful assertion is.
 assume); the suite is green; every branch you intended to cover has an assertion
 on the result, not merely execution of the line.
 
-## 24 — Mutation pass over the unit tests
+## 24 — Mutation pass over the unit tests `[sonnet or a stronger model]`
 
 Same PR as 23, and it is a separate step because it is the half that gets skipped
 under time pressure. Until it runs, step 23 has produced tests of unknown value.
@@ -882,7 +934,7 @@ Three ways this goes wrong, all of which look like success:
 **Acceptance:** one recorded mutation per new test, each shown to make that test
 fail, with the mutation named in the test's own comment.
 
-## 25 — The live-server layer
+## 25 — The live-server layer `[sonnet or a stronger model]`
 
 One PR with step 26. `ci/tools/test_runtime.py` — the live-server cases
 Test::Nginx cannot express: concurrency, the chunk seam through the real body
@@ -895,7 +947,7 @@ Step 20's rejected-test list applies unchanged.
 **Acceptance:** the suite is green, and the baseline case exists and asserts the
 module is loaded — its mutation is step 26's job.
 
-## 26 — Mutation pass over the live-server layer
+## 26 — Mutation pass over the live-server layer `[sonnet or a stronger model]`
 
 Same PR as 25. Same requirement as step 24, over a layer where it is easier to
 fake: a runtime test can pass because the server came up at all.
@@ -910,10 +962,10 @@ fake: a runtime test can pass because the server came up at all.
 **Acceptance:** the baseline case observed failing with the module unloaded; the
 concurrency and reload cases each with a recorded mutation that made them fail.
 
-## 27 — The fuzz target, corpus and dictionary
+## 27 — The fuzz target, corpus and dictionary `[sonnet or a stronger model]`
 
-One PR with 25 and 26. Fuzzing is per-module work; a copied harness driving the
-skeleton's rule table proves nothing about the target.
+Group PR8 contains steps 27–29. Fuzzing is per-module work; a copied harness
+driving the skeleton's rule table proves nothing about the target.
 
 - The fuzz target must call the **real** decision function with
   `(const uint8_t *, size_t)`, not a reimplementation. That seam is steps 7–9's
@@ -928,10 +980,13 @@ skeleton's rule table proves nothing about the target.
 - `fuzz.dict` with the module's real tokens. A dictionary of the skeleton's
   tokens actively misdirects the fuzzer.
 
-**Acceptance:** the fuzz target builds and links the target's real `*_scan.c`, by
-grep; corpus and dict derived from the target's domain, with their sizes stated.
+**Acceptance is conditional:** with a reachable seam, the fuzz target builds and
+links the target's real `*_scan.c`, by grep, and the target-derived corpus and
+dictionary sizes are stated. Without one, the finding names the unavailable seam,
+no substitute fuzz target was created or ported, and the step is explicitly
+degraded; only independently useful corpus/dictionary work continues.
 
-## 28 — Replay order and the ASan soak
+## 28 — Replay order and the ASan soak `[sonnet or a stronger model]`
 
 Same PR as 27. Two gates that are green by default and prove nothing by default.
 
@@ -949,7 +1004,7 @@ Same PR as 27. Two gates that are green by default and prove nothing by default.
 in seconds (verify once, then revert), and the evidence that the soak reaches the
 module, quoted in the PR body.
 
-## 29 — Adapt the three neighbours
+## 29 — Adapt the three neighbours `[sonnet or a stronger model]`
 
 Same PR as 27–28. Each is a file that keeps reporting success while pointed at the
 wrong target:
@@ -964,9 +1019,9 @@ wrong target:
 **Acceptance:** each of the three names the target's own paths/versions, shown by
 grep; and for `codeql.yml`, the analysed-TU count from a real run is non-zero.
 
-## 30 — Coverage as a report
+## 30 — Coverage as a report `[sonnet or a stronger model]`
 
-Own PR. Fourth test layer.
+Group PR9 is a singleton. Fourth test layer.
 
 `ci/tools/coverage.sh` + the `coverage` mode in `ci/tools/ci-build.sh` — a
 distinct build tree, never a flag bolted onto `debug`, so a cached
@@ -983,7 +1038,7 @@ otherwise.
 **Acceptance:** the reported figure moves when a test is deleted (prove it, then
 restore); the filter names the target's `src/`.
 
-## 31 — Caching: `ci-build.sh` as the single chokepoint
+## 31 — Caching: `ci-build.sh` as the single chokepoint `[sonnet or a stronger model]`
 
 Steps 31–35 are one PR. They ship together because the linter's speed budget
 (step 35) is measured on the cached tree this step produces.
@@ -1017,7 +1072,7 @@ Load-bearing rules:
 0% hit rate on an identical rerun means ccache is not wired, whatever the log
 says. Every layer's key names what invalidates it.
 
-## 32 — Port `ci/linter/` and its installer
+## 32 — Port `ci/linter/` and its installer `[sonnet or a stronger model]`
 
 Same PR. Port `ci/linter/` and follow **[linter/README.md](linter/README.md)**
 verbatim: `apt-get` first, then `pipx` for what Debian lacks, then `cpan` for
@@ -1034,7 +1089,7 @@ installer; CI and a fresh clone use the same one.
 `run-all.sh` exits 0 clean, 1 on findings, 2 on a missing tool — observe all
 three, the last by hiding a tool from `PATH`.
 
-## 33 — The tracked hook and the threshold mirror
+## 33 — The tracked hook and the threshold mirror `[sonnet or a stronger model]`
 
 Same PR. Two things that make local-green predict remote-green:
 
@@ -1050,7 +1105,7 @@ before every hook, so one broad pattern can blind every checker at once.
 every threshold in `ci/linter/` matches its counterpart in
 `security-scanners.yml`, listed pair by pair.
 
-## 34 — The checker set is the target's
+## 34 — The checker set is the target's `[sonnet or a stronger model]`
 
 Same PR. **The checker SET is the target's; the entry point is the standard's.** The
 convention is `run-all.sh` + `LINT_ONLY` + exit codes (`0` clean, `1` findings,
@@ -1070,14 +1125,16 @@ convention is `run-all.sh` + `LINT_ONLY` + exit codes (`0` clean, `1` findings,
 - `lint.yml`'s `LINT_ONLY` string diverges with the checker set. The reference
   runs `nginx sh python perl yaml spelling ci-runners ci-ports docs-drift`; that
   is not a constant to copy, and nothing cross-checks it against the scripts that
-  exist.
+  exist. Compare normalized sets: strip the directory, `lint-` prefix and `.sh`
+  suffix from every `ci/linter/lint-*.sh`; split `LINT_ONLY` on whitespace; sort
+  both uniquely.
 
 **Acceptance:** every checker the target ran before still runs, behind
-`run-all.sh`; `LINT_ONLY` in `lint.yml` matches `ls ci/linter/lint-*.sh` exactly;
+`run-all.sh`; the normalized `LINT_ONLY` and checker-script sets match exactly;
 every added or dropped checker has a written reason, and every added one is in
 `skeleton-findings.md`.
 
-## 35 — The speed budget
+## 35 — The speed budget `[sonnet or a stronger model]`
 
 Same PR, and last in the group — it is measured against the finished checker set
 on the cached tree from step 31.
@@ -1111,7 +1168,7 @@ a no-op, so the semgrep probe in particular must still fire. Then run with two
 checkers failing at once and confirm both appear and both are named in the
 `== FAIL:` line.
 
-## 36 — Measure the target's job durations
+## 36 — Measure the target's job durations `[sonnet or a stronger model]`
 
 Steps 36–38 are one PR. CI wall-clock on a self-hosted host is dominated by jobs
 QUEUEING for a label-matching slot. Ten simultaneous requests just means the tail
@@ -1136,7 +1193,7 @@ reference's host) — and check `/proc/loadavg` before trusting any timing: at l
 **Acceptance:** a per-job table with `startedAt`/`completedAt`, the run ID and
 date it came from, and the slot count. No lane changes in this step.
 
-## 37 — Build the lanes
+## 37 — Build the lanes `[sonnet or a stronger model]`
 
 Same PR as 36, and it consumes 36's numbers. At most four lanes.
 
@@ -1173,7 +1230,7 @@ Same PR as 36, and it consumes 36's numbers. At most four lanes.
 **Acceptance:** no lane exceeds the budget from step 36, and the fullest lane's
 headroom is stated. Rules 4–8 each answered against the target's own YAML.
 
-## 38 — Write the lane map into the orchestrator header
+## 38 — Write the lane map into the orchestrator header `[sonnet or a stronger model]`
 
 Same PR as 37, and it is a deliverable rather than a note: the orchestrator's
 header comment is the **only** place this design is written down.
@@ -1195,14 +1252,15 @@ question is whether it would catch anything. A soak that never reaches the
 handler, a fuzzer driving a reimplementation and a coverage number computed over
 nginx core all report success indefinitely.
 
-Ten steps, 39–48. One PR each, or one short series — but each is answered with a
-**measurement in the PR body**, not a reading of the YAML. Where an item cannot
-be met, say so with the `file:line` and leave the honest value; "never weaken a
-gate" still applies.
+Ten steps, 39–48, share group PR12. Keep one commit per coherent fix when useful,
+but update and merge one PR only. Each step is answered with a **measurement in
+the group PR body**, not a reading of the YAML. Where an item cannot be met, say
+so with the `file:line` and leave the honest value; "never weaken a gate" still
+applies.
 
-## 39 — Re-verify the decision seam
+## 39 — Re-verify the decision seam `[sonnet or a stronger model]`
 
-Steps 4–6 established it; everything below depends on it still holding, and it
+Steps 7–9 established it; everything below depends on it still holding, and it
 decays quietly as handler code is added. Re-run step 7's probes:
 
 ```sh
@@ -1223,7 +1281,7 @@ is still true — a module grows parse surfaces.
 (same source, not a second copy), no nginx request types inside it, no stub
 growth that is not justified in the PR body.
 
-## 40 — ASan/UBSan: does the soak reach the module?
+## 40 — ASan/UBSan: does the soak reach the module? `[sonnet or a stronger model]`
 
 The failure is silent: a default config where the handler never runs produces a
 clean ASan report forever.
@@ -1242,7 +1300,7 @@ clean ASan report forever.
 **Acceptance:** reintroduce a known-bad access, watch it abort, revert. The abort
 output goes in the PR body.
 
-## 41 — Fuzzing: can the surface be widened?
+## 41 — Fuzzing: can the surface be widened? `[sonnet or a stronger model]`
 
 The reference carries two targets (`fuzz_scan`, `fuzz_body`). One target on a
 module with several parse surfaces is under-fuzzed by construction.
@@ -1261,7 +1319,7 @@ module with several parse surfaces is under-fuzzed by construction.
 **Acceptance:** unchanged from steps 27–28 and it is a mutation test — reintroduce a
 past bug, confirm replay catches it in seconds, revert.
 
-## 42 — Coverage: measured over the module only
+## 42 — Coverage: measured over the module only `[sonnet or a stronger model]`
 
 `ci/tools/coverage.sh` exists because an unfiltered `gcovr` reports ~1% — nginx
 core is instrumented by the same configure run and swamps the module.
@@ -1280,7 +1338,7 @@ core is instrumented by the same configure run and swamps the module.
 **Acceptance:** before/after numbers and which specific branches the new cases
 reached.
 
-## 43 — Valgrind, memcheck, helgrind
+## 43 — Valgrind, memcheck, helgrind `[sonnet or a stronger model]`
 
 The reference splits these deliberately: `valgrind.yml` is a 60s memcheck lite on
 the merge path; `ci-deep.yml` runs the 600s memcheck **and** helgrind soaks
@@ -1288,22 +1346,23 @@ monthly, both through `ci/tools/soak.sh` (`USE_VALGRIND` / `USE_HELGRIND`).
 
 **Unconditional — these are grep-cheap and cost nothing on a quiet module:**
 
-- Confirm both soaks exist and that **helgrind is actually invoked** — a copied
-  `ci-deep.yml` that lost the helgrind job still shows a green CI Deep badge. A
-  dormant module is exactly where a silently-missing job survives longest.
+- Confirm the memcheck soaks exist. If the module has shared state, also confirm
+  that **helgrind is actually invoked** — a copied `ci-deep.yml` that lost the
+  helgrind job still shows a green CI Deep badge. A dormant module is exactly
+  where a silently-missing job survives longest.
 - `valgrind.supp` needs the **target's** nginx-core suppressions. An over-broad
   suppression silently covers the module's own errors: check each entry is scoped
   to a core frame, and that the file was regenerated rather than copied. This is
   independent of recent activity — a stale suppression hides today's bugs.
 - Helgrind is only meaningful if the target has shared state across workers (shm,
-  a timer, a resolver callback). If it has none, say so explicitly rather than
-  running a soak that can never report.
+  a timer, a resolver callback). If it has none, record the evidence-based
+  not-applicable result; do not add or require a soak that can never report.
 
-**Acceptance:** both soaks confirmed present and helgrind confirmed invoked, by
-grep; every `valgrind.supp` entry shown scoped to a core frame; and, where the
-module has no cross-worker state, the explicit line saying so.
+**Acceptance:** memcheck confirmed present; every `valgrind.supp` entry shown
+scoped to a core frame; and either helgrind confirmed invoked by grep when shared
+state exists, or the evidence-based not-applicable result when it does not.
 
-## 44 — Run the soaks, or prove they can be skipped
+## 44 — Run the soaks, or prove they can be skipped `[sonnet or a stronger model]`
 
 Same PR as 43. **Running the soaks is conditional** — this step is the decision
 plus whichever branch it lands on. 600s memcheck plus helgrind on code that has
@@ -1312,26 +1371,35 @@ the last green deep run re-proves a known result. Skip if **all** of the followi
 are unchanged since that run:
 
 ```sh
-LAST=<sha of the last green ci-deep run>
-git diff --stat $LAST..HEAD -- src/ ci/ .github/versions.env
+LAST=$(gh run list --workflow ci-deep.yml --status success --limit 1 \
+    --json headSha --jq '.[0].headSha // empty' 2>/dev/null || true)
+if test -z "$LAST" || ! git cat-file -e "$LAST^{commit}"; then
+    echo 'no valid last-green baseline: run applicable soaks'
+else
+    git diff --stat "$LAST"..HEAD -- config src/ ci/ .github/workflows/ \
+        .github/versions.env
+fi
 ```
 
-Anything there → run them. Note the deliberate inclusion of `versions.env`:
+No qualifying last-green SHA, a missing local commit, or anything in that diff →
+run the applicable soaks. Workflow definitions are included because they own the
+commands, runners and flags. Note the deliberate inclusion of `versions.env`:
 `bump.yml` bumps pins weekly and `ci-deep.yml` runs monthly, so a module with
 **zero source commits can still be running against a new nginx**. Commit recency
 in `src/` alone is the wrong clock. A submodule bump of `ci/vendor/nginx-tests`
 counts the same way.
 
-**Acceptance:** when run — the soak is under real load and reaches the module
-(step 40's evidence applies), a deliberate leak is reported before you trust it,
-and wall-clock per soak is stated. When skipped — the sha you compared against
-and the empty diff, in the PR body. A silent skip is indistinguishable from a
-soak that never existed.
+**Acceptance:** when run — each applicable soak is under real load and reaches
+the module (step 40's evidence applies), a deliberate leak is reported before you
+trust it, and wall-clock per soak is stated. When skipped — the sha you compared
+against is proven to be a qualifying green `ci-deep` baseline and the full empty
+diff is in the PR body. A silent skip is indistinguishable from a soak that never
+existed.
 
-## 45 — Re-audit caching
+## 45 — Re-audit caching `[sonnet or a stronger model]`
 
-Steps 45–48 are four audits that all need numbers and all become wrong as the
-workflow set grows. One PR, or one each.
+Steps 45–48 remain in group PR12. They all need numbers and all become wrong as
+the workflow set grows; do not split them into step PRs.
 
 Audit `ci/tools/ci-build.sh` as the single chokepoint; no workflow may duplicate
 cache logic. Walk the layers cheapest-first and confirm each: apt/packages,
@@ -1354,7 +1422,7 @@ restore). `bear`/`compile_commands.json` where clang-tidy consumes it.
 **Acceptance:** the warm-run ccache hit rate, and one key per layer with what
 invalidates it.
 
-## 46 — Does every checker still bite?
+## 46 — Does every checker still bite? `[sonnet or a stronger model]`
 
 `zizmor`, `actionlint`, `yamllint`, `semgrep`, `codespell` and the three
 repo-policy checks were installed at steps 32–34. This does not re-install them;
@@ -1371,7 +1439,7 @@ same clean line as one that passes.
 **Acceptance:** every probe in the linter README observed red, plus the run with
 two checkers failing at once in which both are named in the `== FAIL:` line.
 
-## 47 — The four drift checks
+## 47 — Audit drift classes `[sonnet or a stronger model]`
 
 Same PR as 46. These are not probes — nothing fires red for any of them, which is
 why they are listed separately and why each needs an explicit answer.
@@ -1385,15 +1453,16 @@ why they are listed separately and why each needs an explicit answer.
   a clean actionlint as evidence about runner labels; that is probe 2's job
   (step 15) and probe 2 only.
 - Confirm `LINT_ONLY`'s string in `lint.yml` still matches the checkers that
-  actually exist — it diverges as the set changes and nothing cross-checks it.
+  actually exist, using step 34's prefix/suffix stripping, whitespace split and
+  unique sort — it diverges as the set changes and nothing cross-checks it.
 - `run-all.sh` reads `git ls-files`: a **new untracked file is invisible to the
   linter**. Stage before trusting a clean run.
 - Re-time the hook against the ~2s budget, `/proc/loadavg` checked first.
 
-**Acceptance:** an explicit answer to each of the five bullets above. "Checked,
-fine" is not one — each needs the count, the string, or the timing it asked for.
+**Acceptance:** an explicit answer to each bullet above. "Checked, fine" is not
+one — each needs the count, string, or timing it asked for.
 
-## 48 — Re-measure the CI shape
+## 48 — Re-measure the CI shape `[sonnet or a stronger model]`
 
 Only with numbers from `gh run list`:
 
@@ -1418,15 +1487,15 @@ before. A "verified correct" with no number attached is not an answer.
 Docs, memory mirror, the anchor a future forward depends on, the feedback that
 keeps the skeleton ahead of its clones, and the report.
 
-## 49 — Hand the findings back to the skeleton
+## 49 — Hand the findings back to the skeleton `[sonnet or a stronger model]`
 
 `$SCRATCH/skeleton-findings.md` is the deliverable of this step. It has been
 accumulating since step 1: bugs in ported scripts, rules in this prompt that were
 wrong or ambiguous, gates the target had that the skeleton lacks (rule 2),
 checkers the reference does not carry.
 
-Open **one PR against `myguard-labs/nginx-skeleton-module`** — the last write
-outside the target in the whole job:
+Open **one PR against `myguard-labs/nginx-skeleton-module`** — the only write to
+the reference repository in the whole job:
 
 1. **Fix what you can fix in code.** A bug in `ci/tools/`, `ci/linter/`, a
    workflow or this `PROMPT.md` gets the actual change, with the target's
@@ -1444,7 +1513,7 @@ manufacture a finding to have something to send.
 **Acceptance:** either the PR URL, or an explicit "no skeleton findings" line in
 the report.
 
-## 50 — Unresolved bot replies across every PR you opened
+## 50 — Unresolved bot replies across every PR you opened `[sonnet or a stronger model]`
 
 Steps 50–51 are one PR. Both are only checkable once every earlier PR has merged,
 and both produce fixes rather than sentences. Do them before writing the report,
@@ -1483,7 +1552,7 @@ skill runs unprompted next time.
 **Acceptance:** every bot finding answered or explicitly listed as unreviewed,
 with the commits that were never examined named.
 
-## 51 — Re-derive the linter set against the finished repo
+## 51 — Re-derive the linter set against the finished repo `[sonnet or a stronger model]`
 
 Same PR as 50. Steps 32–34 ported `ci/linter/` and kept every checker the target
 already ran. That was a merge decision made early; by now the file set has moved.
@@ -1507,10 +1576,11 @@ Three failures, all of which report clean:
   one that does. Nothing cross-checks that string against the scripts on disk;
   it silently diverges every time the set changes.
 
-**Acceptance:** `LINT_ONLY` matches `ls ci/linter/lint-*.sh`; every language with
-more than a handful of tracked files has a checker or a stated reason not to.
+**Acceptance:** the normalized `LINT_ONLY` and checker-script sets match per step
+34; every language with more than a handful of tracked files has a checker or a
+stated reason not to.
 
-## 52 — Docs
+## 52 — Docs `[sonnet or a stronger model]`
 
 Steps 52–54 are one PR.
 
@@ -1522,7 +1592,7 @@ Steps 52–54 are one PR.
 **Acceptance:** `lint-docs-drift.sh` green in both directions — every workflow has
 a `## CI` row and every row a workflow.
 
-## 53 — Memory mirror
+## 53 — Memory mirror `[sonnet or a stronger model]`
 
 Same PR. Skip only for an external target with no mirror, and say so.
 
@@ -1540,11 +1610,13 @@ Same PR. Skip only for an external target with no mirror, and say so.
 **Acceptance:** the adopted skeleton commit SHA is written in `index.md`; every
 open item from `adoption-findings.md` appears in `issues.md`.
 
-## 54 — Report back
+## 54 — Prepare the completion report `[sonnet or a stronger model]`
 
-Same PR. Per step: what landed, what is red, what you left undone and why. Include
-measured before/after wall-clock and coverage. Seven questions the report must
-answer explicitly, because they are what a greenfield reading gets wrong:
+Same PR. Prepare, but do not send, the completion report. Phase 7 updates and
+sends it after the aftermath. Per group: what landed, what is red, what remains
+and why. Include measured before/after wall-clock and coverage. Seven questions
+the report must answer explicitly, because they are what a greenfield reading
+gets wrong:
 
 1. **Entry points** — how many workflows carried `pull_request:` before, and
    confirmation exactly one does now.
@@ -1567,7 +1639,7 @@ answer explicitly, because they are what a greenfield reading gets wrong:
    never ran. A green checks list does not distinguish the two, so state which
    you had.
 7. **Anything left disabled, skipped or unverified** — a workflow not enabled, a
-   soak skipped per step 43, a gate never seen red. Silence here reads as
+   soak skipped per step 44, a gate never seen red. Silence here reads as
    coverage that does not exist.
 
 Do not report a step complete on a gate you never saw fail.
@@ -1576,78 +1648,86 @@ Do not report a step complete on a gate you never saw fail.
 
 # Phase 7 — Aftermath
 
-Everything above is done and reported. Steps 55–63 are **not** part of the
-adoption, which is why they are offered rather than taken: each one either costs
-real CI time or changes code this job deliberately did not touch.
+All applicable prior groups are merged or proven not needed. Steps 55–63 now run
+in order after migration, forwarding, or a no-op. Do not ask whether to run them.
+Record evidence for every `not needed` result. PR15, PR16, and PR17 are the review
+boundaries: one branch and at most one target PR per group, never one per aftermath
+step.
 
-**Ask once, as a single multi-select question, and do none of them unattended.**
-Steps 62–63 are the exception in one direction only: you *check* it unasked and report
-what you find, because a missing gitlink bump is a defect in work already done.
-
-Each is its own step because each is a separate session's worth of work with its
-own tools — a code review and a coverage push have nothing in common but this
-list.
-
-## 55 — Recheck the implementation
+## 55 — Recheck the implementation `[sonnet or a stronger model]`
 
 Re-read this prompt against the merged result, step by step, and report which of
 the 54 are genuinely done, which are partial, and which were skipped. Independent
 of your own report at step 54 — the point is that it is a fresh reading, so do not
 consult your own report while doing it.
 
-## 56 — Set up linting as a commit hook
+## 56 — Set up linting as a commit hook `[sonnet or a stronger model]`
 
 Install `.githooks/pre-commit`, wire `git config core.hooksPath .githooks`, and
-ask whether to run it across the whole tree now. A first full-tree run on an
-adopted module is usually red; that is findings, not failure.
+run both gates across the whole tracked `HEAD` in a detached temporary worktree,
+so fixer hooks cannot rewrite owner dirt:
 
-## 57 — Review the changes
+```sh
+AUDIT=$(mktemp -d); rmdir "$AUDIT"
+cleanup() { git worktree remove --force "$AUDIT" >/dev/null 2>&1 || true; }
+trap cleanup EXIT INT TERM
+git worktree add --detach "$AUDIT" HEAD
+(cd "$AUDIT" || exit 2
+ ci/linter/run-all.sh --all; lint_rc=$?
+ pre-commit run --all-files; hook_rc=$?
+ test "$lint_rc" -eq 0 && test "$hook_rc" -eq 0)
+rc=$?
+cleanup; trap - EXIT INT TERM
+test "$rc" -eq 0
+```
+
+A first full-tree run on an adopted module may be red; record findings without
+weakening the hook. Remove the temporary worktree even on failure.
+
+## 57 — Review the changes `[opus]`
 
 A diff review of every PR this job landed, one maintainer voice, regressions and
 contract drift.
 
-## 58 — Full code review
+## 58 — Full code review `[opus]`
 
-The module's own C, not just the CI: memory safety, parser boundaries, error
-paths, concurrency. Out of scope for the adoption job, which is exactly why it is
-offered here.
+Audit the module's own C, not just the CI: memory safety, parser boundaries,
+error paths, and concurrency. Put bounded fixes from steps 55–58 in PR15; park
+larger independent changes with evidence rather than creating step PRs.
 
-## 59 — Kick off and re-time the scheduled workflows
+## 59 — Kick off and re-time the scheduled workflows `[sonnet or a stronger model]`
 
-The scheduled lanes (`ci-deep.yml` monthly, `bump.yml` weekly) have not run yet on
-a freshly adopted module, so nothing has proven they work outside the PR lane.
-Offer to trigger them now (`gh workflow run`) rather than discovering a broken
-cron in four weeks, and to re-check step 37's lane topology against the wall-clock
-the merged suite actually produces.
+For each scheduled lane applicable at step 19 (`ci-deep.yml` monthly, `bump.yml`
+weekly), verify that the workflow exists and `gh workflow view` reports it active,
+then trigger it with `gh workflow run`. If a lane was proven not applicable, record
+that evidence instead of inventing or invoking it. Re-check step 37's lane topology
+against the wall-clock the merged suite actually produces.
 
 **State the runner cost before starting**: a deep run is long, and on a
 self-hosted pool it occupies slots other work needs.
 
-## 60 — Broaden the dynamic analysis
+## 60 — Broaden the dynamic analysis `[sonnet or a stronger model]`
 
-Valgrind memcheck, helgrind and the fuzz targets were ported at their reference
-shapes and verified to fire (steps 41 and 43). Widening them is separate work:
-more fuzz targets for parse surfaces named but not covered, a longer time-box,
-helgrind where the module has genuine cross-worker state, memcheck over request
-shapes the soak does not currently reach.
+Valgrind memcheck and reachable fuzz targets were ported at their reference shapes
+and verified to fire (steps 41 and 43). Helgrind is included only when step 43
+proved shared cross-worker state; otherwise retain its evidence-based
+not-applicable result. Cover concrete reachable gaps with the smallest useful
+target, corpus case, time-box, applicable helgrind path, or memcheck request shape.
+Accumulate bounded changes in PR16, not one PR per surface.
 
-Name the specific gaps you found rather than offering "more fuzzing" — an
-unfocused increase in budget buys very little.
+## 61 — Increase coverage `[sonnet or a stronger model]`
 
-## 61 — Increase coverage
-
-Report the current figure and the branches gcovr shows as never taken, then offer
-to add cases for them. Coverage stays a report, not a gate (step 30): the offer is
-more *meaningful assertions*, each with its negative control, never a higher
-number.
+Report the current figure and the branches gcovr shows as never taken, then add
+meaningful cases for reachable gaps in PR16, each with its negative control.
+Coverage stays a report, not a gate (step 30); never chase a number alone.
 
 If the honest answer is that the remaining uncovered lines are unreachable, say
 that instead of offering.
 
-## 62 — Anything left uncommitted or unpushed
+## 62 — Anything left uncommitted or unpushed `[sonnet or a stronger model]`
 
-Check this one **unasked** and report what you find either way; only the fixes are
-offered rather than taken.
+Check this state and report what you find either way. Fix only this run's residue
+through PR17; never touch owner dirt.
 
 ```sh
 git -C <TARGET> status --porcelain          # untracked or modified
@@ -1655,7 +1735,7 @@ git -C <TARGET> log --branches --not --remotes --oneline   # committed, unpushed
 git -C <TARGET> stash list                  # never yours, but say if one exists
 ```
 
-Three classes, and only the first is yours to offer to fix:
+Two classes, and only the first belongs to this run:
 
 - **work of yours that never landed** — a file written and never staged, a
   commit never pushed, a memory-mirror update made in the working tree only.
@@ -1665,14 +1745,17 @@ Three classes, and only the first is yours to offer to fix:
   is byte-identical to what you recorded and leave it alone. Do not offer to
   commit it; it is not yours and the owner cannot find it later if you do.
 
+Recreate step 1's status, worktree patch, index patch and sorted untracked hashes
+under new `$SCRATCH` names, then compare each pair with `cmp`. Any mismatch is a
+finding and is left untouched; a matching path list alone is insufficient.
+
 **Acceptance:** each of the two classes reported with its paths, or an explicit
 "nothing outstanding".
 
-## 63 — The superrepo gitlink
+## 63 — The superrepo gitlink `[sonnet or a stronger model]`
 
-Also checked **unasked**, and separately, because it is the single easiest thing
-in this job to forget: it is invisible from inside the target, and every other
-check in step 62 passes while it is wrong.
+Check this separately because it is invisible from inside the target, and every
+check in step 62 can pass while the gitlink is wrong.
 
 If the target is a myguard submodule, every merged PR needs its bump on the
 superrepo's `master`. A missing one means the superrepo still points at the
@@ -1685,15 +1768,18 @@ git -C /opt/myguard log --oneline -3 -- <path/to/target>
 
 An external target has no gitlink — say so and skip.
 
-**Acceptance:** the superrepo's gitlink resolves to the target's current `master`
-head, shown by SHA; or the bump is offered as the fix.
+**Acceptance:** the superrepo's gitlink resolves to the target's current default
+head, shown by SHA, or an external-target skip is proven. Update the step-54
+report with every aftermath result, target/group PR URL, remaining finding, and
+current target/gitlink SHA; then send that final report.
 
 ---
 
 ## Forwarding one later change into an adopted module
 
-Once a target scores 3/3 at step 4 the job inverts: not adoption, but carrying
-one later skeleton improvement across. One concern, one PR, one session.
+Once a target scores 3/3 at step 4 **and every migration group is proven already
+done or not needed**, the job inverts: carry one later skeleton improvement
+across. One concern, one group PR, one session; then phase 7 runs in full.
 
 **Establish the anchor first.** Without it you either re-land work the target has
 or skip the commit that made the change work. In order of preference: a recorded
@@ -1707,7 +1793,7 @@ git -C /opt/myguard/labs/nginx-skeleton-module log --oneline <anchor>..HEAD
 
 That is the candidate set; [CHANGES](../CHANGES) says what each was *for*.
 **If none of the four resolves, there is no anchor** — the target never took a
-documented adoption, so it is the 25-step job, not a forward. Do not invent one
+documented adoption, so it uses the migration route, not a forward. Do not invent one
 from the first commit or from "HEAD minus the change I was handed"; both
 manufacture a scope that was never true.
 
@@ -1756,5 +1842,4 @@ printed, and every deliberate divergence with its reason. Remote CI green on the
 **current head** — re-check `headRefOid` before merging. Squash-merge, delete the
 branch, bump the superrepo gitlink. Record the new anchor in `index.md`.
 
-The phase-7 aftermath questions (steps 55–63) apply here too, scaled to one
-concern.
+Run the phase-7 aftermath groups (steps 55–63) after the forward PR or no-op.
