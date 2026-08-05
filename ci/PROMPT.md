@@ -1207,7 +1207,10 @@ decays quietly as handler code is added. Re-run step 7's probes:
 
 ```sh
 grep -n 'ngx_http_request_t\|r->\|ngx_http_' src/*_scan.c   # -> expect no hits
-grep -n '_scan\.c' ci/fuzz/build.sh "${UNIT_ENTRY:-ci/tests/unit/run.sh}"  # step 7's real entry point, not the reference's path
+# UNIT_ENTRY does not carry over from step 7's session. Re-derive it: the
+# target's real unit entry point per the baseline, or ci/tests/unit/run.sh
+# only if the target actually has that file.
+grep -n '_scan\.c' ci/fuzz/build.sh "$UNIT_ENTRY"
 git log --oneline -- ci/fuzz/ngx_stubs.c                    # stubs grown since 4?
 ```
 
