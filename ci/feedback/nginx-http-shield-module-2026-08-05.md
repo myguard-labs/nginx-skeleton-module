@@ -60,8 +60,8 @@ copyable into a module that has no `workflow_policy.py`.
 ## 2. Nothing enforces that a PR member carries no `push:`
 
 **What.** No workflow in this repo carries a `push:` trigger, and no check
-requires that. The property holds by construction and by nobody having copied a
-workflow that had one.
+requires that. The current workflow set happens not to contain one; nothing
+stops the next copied workflow from bringing it back.
 
 `workflow_call` does not suppress a member's own `push:`. A member called by
 `ci.yml` that also carries `push: branches: [main]` runs twice per change: once
@@ -97,9 +97,9 @@ shape unrepresentable, or merely warn, is the decision.
 
 **What.** The dictionary is a tracked artifact edited by hand, and nothing ties
 it to the strings the fuzz target actually looks for. It goes stale silently:
-adding a signature to the scanned set and forgetting the dictionary costs
-nothing visible, because a dictionary that is merely incomplete still produces a
-green fuzz run.
+adding a signature to the scanned set and forgetting the dictionary does not
+fail the current fuzz gate, because a dictionary that is merely incomplete still
+produces a green crash-only run.
 
 **Where.**
 
