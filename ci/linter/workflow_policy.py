@@ -593,31 +593,40 @@ def check_secrets() -> int:
             if not isinstance(spec, dict):
                 continue
             uses = spec.get("uses")
-            if not isinstance(uses, str) or not uses.startswith("./.github/workflows/"):
+            if not isinstance(uses, str):
                 continue
             passed = spec.get("secrets")
-            member = uses.rsplit("/", 1)[-1]
-            # The other direction: a member that REQUIRES a secret nobody wires.
-            # GitHub refuses to start that call, which is the loud failure
-            # `required: true` was chosen for -- but it fails on the first run
-            # after merge, and the pairing is checkable here at review time.
-            # `inherit` satisfies every requirement, so it is not missing.
-            if passed != "inherit":
-                supplied = set(passed) if isinstance(passed, dict) else set()
-                for name in sorted(declared.get(member, set()) - supplied):
-                    errors.append(
-                        f"{path.name} job `{job}` calls {member}, which requires "
-                        f"secret `{name}`, but does not pass it -- GitHub refuses "
-                        "to start the call"
-                    )
-            if passed is None:
-                continue
+            local = uses.startswith("./.github/workflows/")
+            # `inherit` is judged BEFORE the local-member filter, because the
+            # blast radius it hands over is worst for the calls this filter used
+            # to drop: `owner/repo/.github/workflows/x.yml@ref` sends the
+            # caller's entire secret set to ANOTHER REPOSITORY. Everything below
+            # this point compares against `declared`, which only knows local
+            # members, so the rest of the loop stays local-only.
             if passed == "inherit":
                 errors.append(
                     f"{path.name} job `{job}` uses `secrets: inherit` -- name "
                     "the secrets the member needs instead; inherit hands it the "
                     "caller's entire secret set, including ones it never reads"
                 )
+                continue
+            if not local:
+                continue
+            member = uses.rsplit("/", 1)[-1]
+            # The other direction: a member that REQUIRES a secret nobody wires.
+            # GitHub refuses to start that call, which is the loud failure
+            # `required: true` was chosen for -- but it fails on the first run
+            # after merge, and the pairing is checkable here at review time.
+            # `inherit` satisfies every requirement, and has already been
+            # rejected above, so everything reaching here is a mapping or None.
+            supplied = set(passed) if isinstance(passed, dict) else set()
+            for name in sorted(declared.get(member, set()) - supplied):
+                errors.append(
+                    f"{path.name} job `{job}` calls {member}, which requires "
+                    f"secret `{name}`, but does not pass it -- GitHub refuses "
+                    "to start the call"
+                )
+            if passed is None:
                 continue
             if not isinstance(passed, dict):
                 # Anything else under `secrets:` is not a name->value mapping.

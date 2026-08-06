@@ -166,6 +166,13 @@ policy_ 0 member-with-push-ok cadence
 # three reds would be equally consistent with "any mention of a secret is
 # flagged" -- and the live check would be asserting green over an empty set.
 policy_ 1 secrets-inherit secrets
+# The same defect one repository over. The caller loop filtered to local
+# members BEFORE judging `inherit`, so a call to
+# `owner/repo/.github/workflows/x.yml@ref` was skipped -- the case where
+# `inherit` is WORST, since the secret set crosses a repository boundary to a
+# moving ref. Distinct from secrets-inherit: reordering that filter back below
+# the inherit branch leaves the local fixture red and only this one green.
+policy_ 1 secrets-inherit-external secrets
 # Message-asserted: a null spec is exactly the input that crashes `.get()` if
 # the isinstance guard is removed, and a traceback also exits 1.
 policy_msg_ secrets-untyped secrets 'declares secret .* untyped'
