@@ -64,6 +64,7 @@ ci/                        everything that only exists to test/build the module
     soak.sh                sustained matching/benign storm under valgrind/ASan
     valgrind.supp          nginx-core-only suppressions
     rename-module.sh       skel -> your name (delete after use)
+    sync-stamp.sh          content-hash the .github/ files an adopter copies
     versions-env.sh        validate-then-source .github/versions.env
     bump-versions.sh       refresh every upstream pin; what bump.yml runs
     bump-actions.sh        move `uses:` sha pins to the tag's newest release

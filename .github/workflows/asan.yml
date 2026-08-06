@@ -1,3 +1,4 @@
+# sync-sha: d4159c8318e48ef76cb8005690d398e3289d88d68ee019939b91b21a69c5126d
 name: A/UBSan
 
 # Dedicated ASan+UBSan soak, PATH-GATED: only runs when a PR/push touches code

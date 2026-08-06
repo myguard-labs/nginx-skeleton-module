@@ -1,3 +1,4 @@
+# sync-sha: 3e50fab97ca005c68507d307c1836bad091be8da810f9329b67753b4d92d9fa0
 name: Valgrind
 
 # Memcheck LITE soak on every PR/push: 60s of a mixed attack/benign request
