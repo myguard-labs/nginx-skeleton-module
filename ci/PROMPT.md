@@ -1020,6 +1020,18 @@ proves nothing about the target.
 - `fuzz.dict` with the module's real tokens, **derived from the target's own parse
   surface** — a dictionary of the skeleton's tokens actively misdirects the fuzzer.
   Re-derive it; do not edit the reference's copy down.
+- **If the target's tokens live in a table in its source, GENERATE the dictionary
+  from that table and gate the drift** — a script that extracts every literal, plus
+  a `--check` mode wired into `ci/linter/`. A hand-listed dictionary goes stale
+  silently: adding a signature and forgetting the dictionary does not fail the fuzz
+  gate, because a merely incomplete dictionary still produces a green crash-only
+  run. Hand-maintain it only when there is no table to derive from.
+- **Do not judge that by edge coverage.** Measured downstream: deriving the
+  dictionary moved `cov` not at all (199 on both arms) while signature reach went
+  23 → 35 of 645 table literals actually driven through the differential oracle in
+  60s from an empty corpus. A trie-walk scanner executes the same edges whichever
+  literal arrives, so coverage is the wrong instrument here — the question is how
+  much of the table the fuzzer ever reaches.
 
 **Acceptance is conditional:** with a reachable seam, the fuzz target builds and
 links the target's real `*_scan.c`, by grep, and the target-derived corpus and

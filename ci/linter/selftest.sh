@@ -86,6 +86,31 @@ policy_() {  # policy_ <expected-exit> <fixture> <subcommand>
         python3 ci/linter/workflow_policy.py "$cmd"
 }
 
+# policy_msg_ <fixture> <subcommand> <grep-ere> -- red, and red for the STATED
+# reason.
+#
+# Exit status alone cannot tell a finding from a crash: an uncaught
+# AttributeError also exits 1, so a fixture asserting only `1` stays green when
+# the branch it covers is replaced by a traceback. That is not hypothetical --
+# deleting the `isinstance(spec, dict)` guard in check_secrets() made
+# secrets-untyped die on `None.get()` and every exit-1 control still passed.
+# Use this wherever the guard under test is what stops a crash.
+#
+# Captured first, not piped: pipefail would hand the pipeline the checker's
+# exit 1 and the assertion would read as failed whatever the message said.
+policy_msg_() {
+    local fixture="$1" cmd="$2" want_re="$3" out got
+    out="$(env "WORKFLOW_POLICY_ROOT=ci/linter/fixtures/policy/$fixture" \
+        python3 ci/linter/workflow_policy.py "$cmd" 2>&1)"; got=$?
+    if [ "$got" -eq 1 ] && printf '%s\n' "$out" | grep -qE "$want_re"; then
+        echo "ok   policy $cmd: $fixture (finding, not a crash)"
+    else
+        echo "FAIL policy $cmd: $fixture: expected exit 1 matching /$want_re/, got $got" >&2
+        printf '%s\n' "$out" | sed 's/^/       | /' >&2
+        rc=1
+    fi
+}
+
 # THE control that makes the rest mean anything: a fixture tree that is simply
 # a valid workflow must be GREEN on all three. Without it, a red on any bypass
 # fixture could be the fixture shape rather than the bypass.
@@ -132,6 +157,31 @@ policy_ 1 prove-only-binder-exempt ports
 policy_ 1 member-with-push cadence
 policy_ 0 member-with-push-ok cadence
 
+# The three ways a secret goes missing between a caller and a member, none of
+# which fails anything at the time it is introduced. `inherit` is green and
+# merely over-broad; an untyped declaration starts the call with an empty
+# string; an undeclared secret is dropped at the boundary while both halves
+# read as correct in isolation. These run as a GROUP with secrets-typed-ok:
+# this repo declares no secrets, so without a green fixture that DOES, the
+# three reds would be equally consistent with "any mention of a secret is
+# flagged" -- and the live check would be asserting green over an empty set.
+policy_ 1 secrets-inherit secrets
+# Message-asserted: a null spec is exactly the input that crashes `.get()` if
+# the isinstance guard is removed, and a traceback also exits 1.
+policy_msg_ secrets-untyped secrets 'declares secret .* untyped'
+# secrets-optional is NOT redundant with secrets-untyped. Disarming the
+# `required is not True` test left secrets-untyped red anyway -- it trips the
+# missing-key branch -- so the value test had no control of its own. A mutant
+# that survives is a branch nothing is gating.
+policy_ 1 secrets-optional secrets
+# ...and secrets-no-required-key is not redundant with EITHER. `NAME:` with
+# nothing under it parses to null, and null `is not True`, so the value branch
+# covers secrets-untyped even when the missing-key branch is deleted. Only a
+# spec that is a real mapping without the key separates the two.
+policy_ 1 secrets-no-required-key secrets
+policy_ 1 secrets-undeclared secrets
+policy_ 0 secrets-typed-ok secrets
+
 # A mistyped pool label in a schedule-only workflow. The trust half of the
 # runners check does not apply to a workflow no fork can reach, and skipping it
 # used to skip the LABEL membership test with it -- while actionlint, the only
@@ -159,6 +209,31 @@ case_ 0 "the commit hook invokes the pre-commit-config hooks" \
 
 # run-all.sh dispatches by glob, so a checker that is not executable, or is
 # named outside the lint-*.sh pattern, is silently not run.
+# Every glob-discovered checker is named in lint.yml's LINT_ONLY.
+#
+# run-all.sh picks checkers up by glob, but CI narrows the run to an explicit
+# allowlist, and nothing connected the two: a checker added to ci/linter/ ran
+# locally and in the pre-commit hook while being silently absent from every PR.
+# That is not a hypothetical -- ci-cadence shipped in 2026-08-06 and had never
+# run remotely when this control was written. A gate that runs everywhere except
+# the merge path is the one place it is load-bearing.
+missing=""
+only="$(sed -n 's/^ *LINT_ONLY: *//p' .github/workflows/lint.yml)"
+for s in ci/linter/lint-*.sh; do
+    n="${s#ci/linter/lint-}"; n="${n%.sh}"
+    # "c" is deliberately excluded in CI (see lint.yml's header): the src/
+    # scanners run in security-scanners.yml instead.
+    [ "$n" = "c" ] && continue
+    printf '%s\n' "$only" | tr ' ' '\n' | grep -qx "$n" || missing="$missing $n"
+done
+if [ -z "$missing" ]; then
+    echo "ok   every checker is named in lint.yml LINT_ONLY"
+else
+    echo "FAIL checkers absent from lint.yml LINT_ONLY:$missing" >&2
+    echo "       | they run locally and in the hook, but never on a PR" >&2
+    rc=1
+fi
+
 case_ 0 "lint-spelling is dispatched by run-all.sh" \
     bash -c 'ci/linter/run-all.sh --list | grep -q lint-spelling.sh'
 

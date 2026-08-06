@@ -17,14 +17,16 @@ finding shellcheck could have named in two seconds. Every script is standalone;
 | `lint-ci-runners.sh` | `.github/workflows/` | fork PRs never select the self-hosted pool; `pull_request_target` forbidden; every `runs-on` names labels that exist, including on workflows no pull request can reach |
 | `lint-ci-ports.sh` | `.github/workflows/` | every port-binding job declares a distinct `TEST_BASE_PORT` band, binds it, and verifies it above the FIRST binding step |
 | `lint-ci-cadence.sh` | `.github/workflows/` | a `workflow_call` member carries no `push:`/`pull_request:` of its own, so it runs once per change rather than twice on two uncancellable concurrency keys (`schedule:` allowed) |
+| `lint-ci-secrets.sh` | `.github/workflows/` | a `workflow_call` member declares the secrets it needs with `required: true`; callers wire them by name and never use `secrets: inherit` |
+| `lint-sync-stamp.sh` | `.github/workflows/`, `.github/scripts/`, `.github/actions/` | every skeleton-shared file carries a current `# sync-sha:` stamp, so an adopter can diff two repos' `--list` output and see exactly what drifted |
 | `lint-docs-drift.sh` | `.github/workflows/`, `README.md` | every workflow documented, every documented workflow exists |
 | `lint-spelling.sh` | all tracked files | codespell over prose, comments and log strings; vendored trees excluded via `lib.sh` |
 | `run-all.sh` | all of the above | runs every check, reports once |
 | `install-linters.sh` | — | apt-get → pipx → cpan → upstream binary |
 | `lib.sh` | — | sourced helpers (file selection, missing-tool failure) |
-| `workflow_policy.py` | — | the three repo-policy checks the `ci-*`/`docs-drift` wrappers call |
+| `workflow_policy.py` | — | the repo-policy checks the `ci-*`/`docs-drift` wrappers call (`runners`, `ports`, `docs`, `cadence`, `secrets`) |
 | `selftest.sh` | — | negative controls for the gate itself; run before the linters in `lint.yml` |
-| `fixtures/policy/` | — | trees the policy checks must go RED on — the known bypasses, plus the runner-label and step-ordering cases; `clean/` and the `-ok` trees must stay GREEN |
+| `fixtures/policy/` | — | trees the policy checks must go RED on — the known bypasses, the runner-label and step-ordering cases, and the four ways a `secrets:` declaration goes wrong; `clean/` and the `-ok` trees must stay GREEN |
 
 Rule config lives at the repo root so editors and these scripts agree:
 `.yamllint` (workflow-shaped YAML), `.perlcriticrc` (Test::Nginx-shaped Perl).
@@ -287,6 +289,26 @@ EOF
 LINT_ONLY=ci-runners  ci/linter/run-all.sh    # -> not an approved selector (label typo)
 rm .github/workflows/_probe.yml
 
+# a secret wired at the caller that the member never declared -- both halves
+# read as correct on their own; the secret is dropped at the call boundary
+LINT_ONLY=ci-secrets ci/linter/run-all.sh    # (see fixtures/policy/secrets-*)
+
+# an unstamped file in the shared set. A NEW probe rather than an edit to a
+# tracked workflow: the cleanup for that is `git checkout <file>`, which also
+# discards any uncommitted work you had in it.
+cat > .github/workflows/_probe.yml <<'EOF'
+name: probe
+on:
+  workflow_dispatch:
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo probe
+EOF
+LINT_ONLY=sync-stamp ci/linter/run-all.sh    # -> MISSING stamp
+rm .github/workflows/_probe.yml
+
 # docs drift, the other direction: a README reference to a workflow that is gone
 printf '\nSee .github/workflows/nosuch.yml\n' >> README.md
 LINT_ONLY=docs-drift ci/linter/run-all.sh ; git checkout README.md
@@ -328,12 +350,18 @@ Never a blanket disable in a `zizmor.yml`.
 ## In CI
 
 `.github/workflows/lint.yml` runs `install-linters.sh` then
-`LINT_ONLY="nginx sh python perl yaml spelling ci-runners ci-ports docs-drift" run-all.sh` — the same entry
-point as the hook, so a clone that never enabled `core.hooksPath` still cannot
-land a regression. **That string is duplicated here and in `lint.yml`, and
-nothing cross-checks the two**: a checker added to one and not the other runs in
-only one place, silently. Edit both in the same commit, and note that a derived
-module's list will legitimately differ from this one.
+`LINT_ONLY="nginx sh python perl yaml spelling ci-runners ci-ports ci-cadence
+ci-secrets sync-stamp docs-drift" run-all.sh` — the same entry point as the
+hook, so a clone that never enabled `core.hooksPath` still cannot land a
+regression.
+
+That allowlist is narrower than the glob `run-all.sh` uses, so a checker added
+to `ci/linter/` runs locally and in the hook while being **absent from every
+PR** — a gate missing from the one path where it is load-bearing. `selftest.sh`
+now cross-checks the two ("every checker is named in lint.yml LINT_ONLY") and
+goes red on the gap; `c` is the one deliberate exclusion, for the reason below.
+Before that control existed, `ci-cadence` shipped and had never run remotely.
+A derived module's list will legitimately differ from this one.
 
 `lint.yml` is wired into the `ci.yml` orchestrator and runs on `ubuntu-latest`,
 taking no self-hosted slot.
