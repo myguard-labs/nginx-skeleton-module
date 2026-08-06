@@ -358,6 +358,7 @@ def check_ports() -> int:
             body = _body(node)
             declared = re.search(r"(?m)^\s*TEST_BASE_PORT:\s*[\"']?(\d+)", body)
             starts_runtime = RUNTIME_DRIVER in body
+            binds_band = BINDER_RE.search(body) is not None
             where = f"{path.name}:{job}"
 
             order = _order_finding(where, node)
@@ -370,11 +371,19 @@ def check_ports() -> int:
             # --port, and reintroduces exactly the cross-job collision the bands
             # exist to prevent: two jobs pinned to the same runner, disjoint
             # concurrency groups, nothing serialising them, both binding 18880.
-            if starts_runtime and not declared:
+            # Any BINDER (not just the runtime driver) owes this declaration --
+            # `prove` and coverage.sh are binders too (see BINDERS above), and a
+            # job whose only binder is `prove` was exempt here while still being
+            # treated as a binder by the ordering check. That gap is a live
+            # negative-control failure downstream: deleting a prove-only job's
+            # band left this check GREEN.
+            if binds_band and not declared:
                 errors.append(
-                    f"{where} starts {RUNTIME_DRIVER} without declaring "
-                    "TEST_BASE_PORT -- it would take the driver's default port "
-                    "and collide with any other runtime job on the same runner"
+                    f"{where} binds a port (via "
+                    f"{RUNTIME_DRIVER if starts_runtime else 'prove/coverage.sh'}) "
+                    "without declaring TEST_BASE_PORT -- it would take the "
+                    "default port and collide with any other runtime job on "
+                    "the same runner"
                 )
                 continue
 
@@ -457,10 +466,54 @@ def check_docs() -> int:
     )
 
 
+# --------------------------------------------------------------------------
+# cadence
+
+
+def check_cadence() -> int:
+    """A `workflow_call` member carries no second entry point of its own.
+
+    `workflow_call` does not suppress a member's own triggers. A member reached
+    from ci.yml that ALSO carries `push:` runs twice per change: once on the PR,
+    once on the merge commit, against a tree identical to the PR head that
+    already passed. The two runs get different concurrency keys, so
+    `cancel-in-progress` does not collapse them, and BOTH are green -- the only
+    symptoms are the bill and a README that no longer describes what runs when.
+
+    Nothing else catches this. Every member here is correct today, but that
+    correctness is asserted only by a comment in each file ("No push/pull_request
+    trigger here on purpose"), and a comment does not survive the next workflow
+    copied in from a repo with a different topology. Downstream this cost five
+    stray post-merge runs across six of seven members before review caught it.
+
+    `schedule:` is explicitly allowed: codeql.yml and ci-deep.yml are reachable
+    both from ci.yml and on their own cadence, which is the intended shape and
+    not a duplicate run of the same tree.
+    """
+    errors: list[str] = []
+    for path in workflows():
+        trigger = events(load(path))
+        if "workflow_call" not in trigger:
+            continue
+        for dupe in sorted(trigger & {"push", "pull_request"}):
+            errors.append(
+                f"{path.name} is a workflow_call member and also carries "
+                f"`{dupe}:` -- it would run twice per change, on two "
+                "concurrency keys that cannot cancel each other. Reach it "
+                "from ci.yml only (schedule: is allowed)"
+            )
+    return report(
+        "lint-ci-cadence",
+        errors,
+        "every workflow_call member has ci.yml as its only PR entry point",
+    )
+
+
 COMMANDS = {
     "runners": check_runners,
     "ports": check_ports,
     "docs": check_docs,
+    "cadence": check_cadence,
 }
 
 

@@ -422,6 +422,13 @@ jobs:
     name: ASan and UBSan
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
     timeout-minutes: 30
+    env:
+      # This job's OWN band, disjoint from the runtime job's 19200 and
+      # ci-deep.yml's 19400. `prove` binds a port just as much as the runtime
+      # driver does, and nothing serialises this job against the runtime suite
+      # above -- both can start in the same instant on the same host. Without
+      # this the suite falls back to Test::Nginx's hardcoded 1984 and collides.
+      TEST_BASE_PORT: '19300'
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -481,10 +488,18 @@ jobs:
           fi
           echo "OK: ASan + UBSan runtimes present in the binary under test"
 
+      # Above the FIRST binder (`prove` below) -- a verifier only guards the
+      # steps beneath it.
+      - name: Verify this job's port band is free
+        run: bash ci/tools/max-port.sh "$TEST_BASE_PORT"
+
       - name: Run ci/t/ under ASan and UBSan
         env:
           TEST_NGINX_BINARY: ${{ github.workspace }}/.build/nginx-${{ env.NGINX_VERSION }}-asan/objs/nginx
           TEST_NGINX_TIMEOUT: "30"
+          # Without this the suite falls back to the hardcoded 1984 and the
+          # declared band above would be decoration.
+          TEST_NGINX_PORT: ${{ env.TEST_BASE_PORT }}
           TEST_NGINX_SERVROOT: ${{ github.workspace }}/ci/t/servroot
           # detect_leaks=0: nginx intentionally leaves its cycle pool reachable at
           # exit; leak checking is valgrind.yml's job, with suppressions. Here we

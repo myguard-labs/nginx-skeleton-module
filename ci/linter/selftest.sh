@@ -92,6 +92,10 @@ policy_() {  # policy_ <expected-exit> <fixture> <subcommand>
 policy_ 0 clean runners
 policy_ 0 clean ports
 policy_ 0 clean docs
+# Deliberately NO `policy_ 0 clean cadence`: the clean fixture has no
+# workflow_call member, so that line would assert green over an empty set --
+# vacuous, and indistinguishable from the check being broken. The green control
+# for cadence is member-with-push-ok below, which has a member to clear.
 
 # A `.yaml` workflow was invisible to every check: unchecked runner, unchecked
 # ports, undocumented gate.
@@ -111,6 +115,22 @@ policy_ 1 bypass-commented-job-key ports
 # uniqueness all hold, so the presence checks stay green -- this repo's own
 # build-test.yml sat in exactly this shape until 2026-08-02.
 policy_ 1 verify-after-bind ports
+
+# A job whose only binder is `prove` (not ci/tools/test_runtime.py) used to be
+# exempt from the "declare TEST_BASE_PORT" requirement, even though `prove` is
+# already a BINDERS member and the ordering check already treats it as one.
+# Found downstream as a failed negative control: deleting a prove-only job's
+# band left this check green.
+policy_ 1 prove-only-binder-exempt ports
+
+# A workflow_call member carrying its own `push:` runs twice per change and BOTH
+# runs are green, so nothing else in the toolchain notices. Every member here is
+# correct today, but only a per-file comment says so, and a comment does not
+# survive the next workflow copied in. These run as a PAIR: the -ok fixture is
+# the same file with `schedule:` (the intended shape), and without it the red
+# above is equally consistent with "any second trigger is flagged".
+policy_ 1 member-with-push cadence
+policy_ 0 member-with-push-ok cadence
 
 # A mistyped pool label in a schedule-only workflow. The trust half of the
 # runners check does not apply to a workflow no fork can reach, and skipping it
