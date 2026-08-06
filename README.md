@@ -296,13 +296,17 @@ Read /opt/myguard/labs/nginx-skeleton-module/ci/PROMPT.md and apply it to
 /path/to/nginx-<name>-module.
 ```
 
-Flat-numbered steps in seven phases cover inventory, the decision seam, the
+63 flat-numbered steps in seven phases cover inventory, the decision seam, the
 `ci/` layout, runner identity, workflows, badges, one PR entry point, test
 layers, fuzzing, caching, linting, lanes, and proof that each green gate bites.
-A step is a **grind unit, never a PR boundary**. Sonnet or a stronger model works
-one step at a time on the group's shared branch; each fixed group gets at most
-one target PR. Every run starts at step 1, including a partial earlier adoption,
-and the mandatory aftermath runs after migration, forwarding, or a no-op.
+A step is a **unit of work, never a PR boundary**: the whole job lands through
+**four target PRs** (7–22, 23–38, 39–54, 55–63) plus one feedback PR against this
+repo. Sonnet or a stronger model works one step at a time on the current PR's
+shared branch. Two hard barriers sit inside the first PR — runner identity
+(13–15) completes before any workflow is ported, and step 17's double-run proof
+completes before step 18 removes the last `pull_request:` trigger. Every run
+starts at step 1, including a partial earlier adoption, and the mandatory
+aftermath runs after migration, forwarding, or a no-op.
 
 It is a **merge into whatever CI the target already has**, not a greenfield
 install — the target's tests, thresholds and extra gates survive; the layout,
