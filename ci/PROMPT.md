@@ -89,8 +89,12 @@ Three rules outrank every step:
    the skeleton (step 49). A rollout that reduces coverage is a regression
    wearing a standardisation PR.
 3. **Nothing self-hosted is portable.** `builder02` is a myguard machine and no
-   linter here will tell an adopter they copied it. Step 13 settles it before any
-   workflow is ported.
+   linter here will tell an adopter they copied it — `TRUST_SPLITS` ships
+   containing that label and **approves it by construction**, so a copied
+   selector is green everywhere until it dispatches to hardware the target does
+   not own, or queues forever against a label nobody answers. Step 4 records
+   `POOL_OWNED`; step 13 settles it before any workflow is ported. The default is
+   hosted-only, and an unfamiliar `origin` is always hosted-only.
 
 Standing constraints, all steps:
 
@@ -295,6 +299,39 @@ gh run list -R <owner>/<module> --limit 20 \
 
 **Read the memory mirror first if the target is ours** — `index.md`, `issues.md`,
 `lessons.md`. A trap recorded there outranks anything you infer from the code.
+
+### Record `POOL_OWNED` now — it binds every later step
+
+The `origin` URL above is not trivia; it is the input to the only question that
+can put our hardware in someone else's repository. Answer it once, here, in
+writing, before any workflow is read:
+
+```sh
+git remote get-url origin
+# myguard-labs/* or eilandert/*  -> POOL_OWNED=yes   (our machine, our pool)
+# anything else                  -> POOL_OWNED=no    (hosted-only, no exceptions)
+```
+
+**`POOL_OWNED=no` is the default and the safe answer.** An unfamiliar remote, a
+fork, a mirror, a local path, a detached checkout with no `origin` at all — every
+one of those is `no`. Do not reason from the module's *name*: a repo called
+`nginx-foo-module` under an unfamiliar owner is not ours, and the naming
+convention is the thing an adopter copies first.
+
+Under `POOL_OWNED=no`, these hold for the whole run and are not revisited:
+
+- every `runs-on` is a bare `ubuntu-latest` — no ternary, no `fromJSON`, no
+  `self-hosted` (step 13)
+- `TRUST_SPLITS` is an empty frozenset and `.github/actionlint.yaml` declares no
+  `self-hosted-runner:` block (step 14)
+- no step may introduce a self-hosted selector "temporarily to measure
+  something". Steps 36–38 tune lane topology for a pool the target does not have;
+  under `POOL_OWNED=no` they are hosted-only scheduling work.
+
+Write the value into the group todo verbatim. A later step that finds
+`POOL_OWNED` unrecorded stops and re-derives it rather than inferring from
+whatever the workflows currently say — the workflows are the thing under
+suspicion.
 
 **Acceptance:** every command above run, with its output kept — steps 4–6 all read
 from it and re-running against a moved tree gives different answers.
@@ -616,11 +653,25 @@ copied unedited, **contains `builder02` and approves it by construction**. The
 failure is not a red CI you fix; it is a green CI either queueing forever against
 a label nobody answers, or dispatching to a runner you do not own.
 
-**The rule: if the target does not own the pool, every job is `ubuntu-latest`
-with no ternary at all.** The fork ternary answers one question — may this code
-touch *our* build host? An adopter with no build host has no such question, and
-an expression whose fallback arm names someone else's machine is a default-deny
+**The rule: under `POOL_OWNED=no` (step 4), every job is `ubuntu-latest` with no
+ternary at all.** The fork ternary answers one question — may this code touch
+*our* build host? An adopter with no build host has no such question, and an
+expression whose fallback arm names someone else's machine is a default-deny
 that defaults to somebody else's hardware.
+
+**Start from what the target actually has, not from what the reference has.**
+Three states, and only the first is the reference's own shape:
+
+| The target's `runs-on` | What it means | What you do |
+|---|---|---|
+| fork ternary naming `builder02` | copied from us, or a former myguard repo | rewrite all of them to `ubuntu-latest`; this is the case the step was written for |
+| a **bare list** — `[self-hosted, builder02, lxc]`, no ternary | worse than the ternary: no fork arm, so a fork PR runs on our host | same rewrite, and note it in the PR body — it means fork PRs have been reaching our pool |
+| already `ubuntu-latest` everywhere | nothing to do here | confirm, record it, move to step 14 — do **not** add a ternary |
+
+The third row is the one an adopter gets wrong by following the reference too
+faithfully: seeing the skeleton's ternary and reproducing it. A hosted-only
+target that gains a ternary has gained a selector pointing at hardware it does
+not own, from a step whose entire purpose was to remove one.
 
 ```yaml
 # before (reference, myguard-owned pool)
@@ -642,14 +693,22 @@ runners those are slower and bounded by the 6-hour job limit. That is a
 scheduling problem, not a reason to point a `runs-on` at hardware you do not
 control.
 
-**If the target DOES own a pool**, self-hosted is opt-in and a separate commit —
-never smuggled into the port. All three files change together with their own
-labels, the fork arm stays the hosted runner, and the condition stays
-`github.event.pull_request.head.repo.fork` — not `github.actor`, not a repo
-variable, both of which a fork controls. Then read steps 36–38 in full.
+**Only under `POOL_OWNED=yes`** is self-hosted available at all, and then it is
+opt-in and a separate commit — never smuggled into the port. All three files
+change together with their own labels, the fork arm stays the hosted runner, and
+the condition stays `github.event.pull_request.head.repo.fork` — not
+`github.actor`, not a repo variable, both of which a fork controls. Then read
+steps 36–38 in full.
+
+"The target is ours and shares our build host" is a claim about **hardware and
+runner registration**, not about the GitHub org. A myguard-owned repo whose CI
+has never been registered with the pool is still `ubuntu-latest`: a selector is
+answered by a registered runner or by nothing, and "nothing" is a job queued
+forever on a green-looking PR.
 
 **Acceptance:** no `runs-on` in `.github/workflows/` names a label the target does
-not own; `actionlint` still parses every workflow.
+not own; `actionlint` still parses every workflow; the PR body states
+`POOL_OWNED` and, if `yes`, which registered pool answers the labels.
 
 ## 14 — Runner identity: the two policy files `[sonnet or a stronger model]`
 
@@ -684,6 +743,14 @@ Same PR, last. A grep proving `builder02` is absent says nothing about whether t
 # 1. no myguard runner identity survives anywhere
 grep -rn 'builder02\|b02lxc' .github/ ci/linter/workflow_policy.py 2>/dev/null
 #    -> expected: no hits for a hosted-only adopter
+
+# 1b. and no self-hosted selector survives under ANY spelling. Probe 1 greps our
+#     CURRENT label; it cannot see `[self-hosted, lxc]`, a renamed pool, or a
+#     ternary whose fallback arm was edited to a different machine. This one asks
+#     the question by shape instead of by name, and needs no linter to exist yet.
+grep -rnE 'runs-on:.*(self-hosted|fromJSON)' .github/workflows/
+#    -> POOL_OWNED=no: MUST be empty. Any hit is a selector pointing at hardware
+#       the target does not own, whatever it is called.
 
 # 2. after step 32, the checker rejects the reference's selector
 cat > .github/workflows/_probe.yml <<'EOF'
@@ -1820,7 +1887,11 @@ Then check the drift classes. **None is visible from a green run:**
   comment after a job key). Ship the YAML-parse version and run
   `ci/linter/selftest.sh` plus `ci/linter/fixtures/policy/` in the target.
 - **Runner identity** — steps 13–15. Any change touching a `runs-on`,
-  `actionlint.yaml` or `TRUST_SPLITS` carries our pool with it. Run probe 2.
+  `actionlint.yaml` or `TRUST_SPLITS` carries our pool with it. Run probes 1b and
+  2. Probe 1b is a bare grep and always available; probe 2 needs the linter, so a
+  sync landing before step 32 is covered by 1b alone. A single-change sync is the
+  likeliest way a self-hosted selector re-enters a target that step 13 already
+  cleaned — the reference's copy is the source, and it is `POOL_OWNED=yes`.
 - **No `src/`** — step 12. Everything scoped to `src/` selects nothing and reports
   success.
 
