@@ -3,8 +3,19 @@
 Six findings carried from the label-autoconf adoption
 (`memory/labs/nginx-label-autoconf-module/HANDOFF-skeleton-adoption.md`, "Carry
 into card 51"). Each verified against this repo's *current* source before
-acting — two were already fixed here, one never applied as described, and three
-were confirmed and are fixed in this PR.
+acting — two were already fixed here, two never applied as described, and two
+were confirmed and fixed at the time.
+
+**Finding 5 (bare `workflow_call: {}`, no `secrets:` block) was decided and
+acted on 2026-08-06** — the skeleton now requires typed `required: true`
+per-member secrets, gated by `workflow_policy.py secrets` — and was deleted
+here in that commit, per this directory's README. The numbering is deliberately
+left with the gap: the summary table and the sibling findings cite these
+numbers.
+
+What remains below is finding 6, the one open question: a recommendation about
+what step 44 should require of an adopter claiming "no request surface", which
+needs an owner call rather than a fix.
 
 ## 1. `concurrency.group` collapse under `workflow_call` (`github.workflow`)
 
@@ -89,35 +100,6 @@ classifying the extraction-script + drift-gated shim as CLEAN, with the same
 instruction to confirm the drift check itself is exercised (a PR that edits the
 source without regenerating the `.inc` must fail the build).
 
-## 5. Bare `workflow_call: {}` — no `secrets:` block
-
-**Verdict: confirmed present — decision-heavy, not fixed here.** Every
-`workflow_call` member in this repo (`asan.yml:28`, `build-test.yml:19`,
-`codeql.yml:28`, `fuzzing.yml:22`, `valgrind.yml:27`,
-`security-scanners.yml:37`, `lint.yml:25`) declares `workflow_call: {}` with no
-`secrets:` stanza. A member that starts needing a secret — the target needed
-`GH_SUBMODULE_TOKEN` for a private submodule checkout
-(`nginx-label-autoconf-module/.github/workflows/{asan,build-test,security-scanners,runtime-tests}.yml`,
-each with a typed `secrets: GH_SUBMODULE_TOKEN: {required: true}` block, wired
-from `ci.yml:113/121/129/137` via `secrets: ${{ secrets.GH_SUBMODULE_TOKEN }}`)
-gets nothing under the skeleton's current shape: the called run silently lacks
-the secret rather than failing loudly, because an undeclared `workflow_call`
-input to `secrets:` is simply not passed.
-
-This is a security-posture question, not a bounded syntax fix: whether the
-skeleton should (a) require every member to declare its needed secrets by name
-(typed, `required: true`, matching the target's pattern — explicit but a
-per-secret edit to every consuming member), or (b) document a
-`secrets: inherit`-at-the-caller convention (less boilerplate, but widens every
-member's blast radius to the full secret set of the calling workflow, including
-ones it doesn't need). Changing the skeleton's stance here changes what every
-future adopter's members can silently fail to receive.
-
-**Disposition.** Not fixed in this PR — flagged for the owner. Recommendation:
-option (a), matching the target's already-proven pattern, since it fails loudly
-(`required: true`) rather than silently, and keeps each member's secret surface
-visible and minimal at the member itself rather than implicit at the caller.
-
 ## 6. `valgrind.yml`/`ci-deep.yml` soak boilerplate said to excuse a missing `soak.sh`
 
 **Verdict: not applicable — not present as described.** The finding describes
@@ -156,5 +138,4 @@ target hit before the diff-based skip path is reached.
 | 2 | not applicable (never present as described) | none; distro-fallback recommended if support matrix widens |
 | 3 | confirmed | fixed here (`ci/PROMPT.md` steps 7, 9, 39) |
 | 4 | confirmed | fixed here (`ci/PROMPT.md` step 7, new taxonomy bullet) |
-| 5 | confirmed | decision-heavy, flagged for owner |
 | 6 | not applicable (never present as described) | recommendation only, decision-heavy |
