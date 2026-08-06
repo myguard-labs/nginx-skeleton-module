@@ -56,8 +56,19 @@ jobs:
     name: Build & Test::Nginx (${{ matrix.flavor }} ${{ matrix.label }})
     runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
     timeout-minutes: 30
+    env:
+      # This job's band, disjoint from build-test.yml's 19200/19300 and the
+      # coverage job's 19400. `prove` binds a port, so the matrix legs need one
+      # even though they never start the runtime driver; without it all three
+      # fall back to Test::Nginx's hardcoded 1984.
+      TEST_BASE_PORT: '19500'
     strategy:
       fail-fast: false
+      # The three legs share ONE band, so they must not run at once: they are
+      # pinned to the same host and a matrix is not serialised by default.
+      # One band + max-parallel: 1 is cheaper than three disjoint bands and
+      # keeps the band table readable.
+      max-parallel: 1
       # A matrix is expanded before any step runs, so load-versions.sh cannot
       # feed it. Each cell therefore names the versions.env KEY it wants, and
       # the build step dereferences it after the pins are loaded -- keeping the
@@ -137,6 +148,12 @@ jobs:
           echo "SERVER_BIN=$GITHUB_WORKSPACE/$server" >> "$GITHUB_ENV"
           echo "MODULE_SO=$GITHUB_WORKSPACE/$build/ngx_http_skel_module.so" >> "$GITHUB_ENV"
 
+      # Above the FIRST binder (`prove` below). With max-parallel: 1 the legs
+      # reuse one band in sequence, so this also catches a leg whose server
+      # outlived its step and is still holding the port.
+      - name: Verify this job's port band is free
+        run: bash ci/tools/max-port.sh "$TEST_BASE_PORT"
+
       - name: Run ci/t/
         env:
           # Set by the build step above -- it resolves the flavor's binary name
@@ -146,6 +163,9 @@ jobs:
           # See build-test.yml's identical setting for why this must be 20, not
           # the ~2s Test::Nginx::Socket default.
           TEST_NGINX_TIMEOUT: "20"
+          # Without this the suite falls back to the hardcoded 1984, which is
+          # what all three legs did before the band above existed.
+          TEST_NGINX_PORT: ${{ env.TEST_BASE_PORT }}
           TEST_NGINX_SERVROOT: ${{ github.workspace }}/ci/t/servroot
         # Test::Nginx probes a server on PATH for its version and Bailouts if it
         # finds none -- TEST_NGINX_BINARY alone does not satisfy that probe, so
