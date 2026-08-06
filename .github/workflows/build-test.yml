@@ -1,3 +1,4 @@
+# sync-sha: 50035b396bc84a80d2658645e17a19c4b0f18bd04ea0dcdfd30e50876bdbc12e
 name: Build&Test
 
 # The PR gate: everything here must be green to merge. Fast enough to run on

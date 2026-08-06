@@ -65,5 +65,6 @@ jobs:
           # Every checker except "c" -- adding a lint-*.sh without adding its
           # name here leaves it running locally and never in CI, which is the
           # quieter half of a gate that is not really a gate.
-          LINT_ONLY: nginx sh python perl yaml spelling ci-runners ci-ports docs-drift
+          LINT_ONLY: nginx sh python perl yaml spelling ci-runners ci-ports ci-cadence ci-secrets sync-stamp docs-drift
         run: ci/linter/run-all.sh
+# sync-sha: cba3234447330359e0df59594ea0b9fa5ede84e95db0001e785320696cee411c
