@@ -15,7 +15,8 @@ finding shellcheck could have named in two seconds. Every script is standalone;
 | `lint-perl.sh` | `ci/t/*.t`, `*.pl`, `*.pm` | `perl -c` + perlcritic severity ≥4 |
 | `lint-yaml.sh` | `*.yml`, `*.yaml` | yamllint (errors block, warnings visible), actionlint + zizmor (`--persona=pedantic`) on `.github/workflows/` |
 | `lint-ci-runners.sh` | `.github/workflows/` | fork PRs never select the self-hosted pool; `pull_request_target` forbidden; every `runs-on` names labels that exist, including on workflows no pull request can reach |
-| `lint-ci-ports.sh` | `.github/workflows/` | every runtime-bearing job declares a distinct `TEST_BASE_PORT` band, binds it, and verifies it above the FIRST binding step |
+| `lint-ci-ports.sh` | `.github/workflows/` | every port-binding job declares a distinct `TEST_BASE_PORT` band, binds it, and verifies it above the FIRST binding step |
+| `lint-ci-cadence.sh` | `.github/workflows/` | a `workflow_call` member carries no `push:`/`pull_request:` of its own, so it runs once per change rather than twice on two uncancellable concurrency keys (`schedule:` allowed) |
 | `lint-docs-drift.sh` | `.github/workflows/`, `README.md` | every workflow documented, every documented workflow exists |
 | `lint-spelling.sh` | all tracked files | codespell over prose, comments and log strings; vendored trees excluded via `lib.sh` |
 | `run-all.sh` | all of the above | runs every check, reports once |
@@ -33,12 +34,13 @@ Thresholds deliberately match `.github/workflows/security-scanners.yml`. Move
 one there and move it here **in the same commit**, or local-green stops
 predicting remote-green — the only reason this directory exists.
 
-The last three are **repo-policy** checks, not general linters, and that is why
+The last four are **repo-policy** checks, not general linters, and that is why
 they are here rather than left to actionlint or zizmor. Those two read a workflow
 against general knowledge — syntax, and a catalogue of known attack shapes. These
 encode facts only this repo knows: which self-hosted labels exist, that the
 runners are persistent and shared with the Debian package builds, which port band
-each job owns, and which file documents the pipeline. Each one goes red when a
+each job owns, that `ci.yml` is the single orchestrator, and which file documents
+the pipeline. Each one goes red when a
 NEW workflow is added without a property every existing workflow happens to have
 — the case where copying an existing file is the only thing between the repo and
 a regression, and nothing enforces the copy.

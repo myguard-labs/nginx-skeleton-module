@@ -2,10 +2,16 @@
 # ci/linter/lint-python.sh -- ruff lint + format check over tracked *.py.
 #
 # ruff replaces flake8/pyflakes/isort/black here: one binary, no venv, and it
-# is what the superrepo's tools/ scripts are already checked with. The module
-# tree carries no Python today; this gate exists so the first helper script
-# committed under ci/tools/ is checked from its first commit instead of after
-# it has grown.
+# is what the superrepo's tools/ scripts are already checked with. It covers
+# ci/linter/workflow_policy.py and ci/tools/test_runtime.py -- both gate logic,
+# so an unlinted break here is a check that stops checking rather than a script
+# that stops running.
+#
+# Keep this dispatched even when the count is low: an adopted module that adds
+# its first ci/tools/ helper gets it checked from the first commit. Run an
+# extension census (`git ls-files | sed -n 's/.*\.//p' | sort | uniq -c`) when
+# deriving a linter set for a new module -- a tracked-but-unlinted language is
+# a silent pass in exactly the way a selector matching zero files is.
 #
 # `ruff format --check` reports formatting WITHOUT rewriting: a linter that
 # edits files behind a commit hook changes what you are about to commit.
