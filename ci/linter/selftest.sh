@@ -173,6 +173,15 @@ policy_ 1 secrets-inherit secrets
 # moving ref. Distinct from secrets-inherit: reordering that filter back below
 # the inherit branch leaves the local fixture red and only this one green.
 policy_ 1 secrets-inherit-external secrets
+# The third case that filter used to swallow: an external call whose `secrets:`
+# is neither a mapping nor `inherit`. `inherit` was hoisted above the filter,
+# but the SHAPE check stayed below it, so `secrets: false` on an external member
+# reported clean over a caller GitHub refuses to start. Exit 2, not 1 -- an
+# uninterpretable `secrets:` means the check did not run over that call, so
+# policy_msg_ (which hardcodes exit 1) cannot assert this one. Moving the shape
+# check back below `if not local` turns this fixture green while every other
+# secrets fixture stays exactly as it is.
+policy_ 2 secrets-malformed-external secrets
 # Message-asserted: a null spec is exactly the input that crashes `.get()` if
 # the isinstance guard is removed, and a traceback also exits 1.
 policy_msg_ secrets-untyped secrets 'declares secret .* untyped'

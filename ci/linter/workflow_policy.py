@@ -610,6 +610,22 @@ def check_secrets() -> int:
                     "caller's entire secret set, including ones it never reads"
                 )
                 continue
+            if passed is not None and not isinstance(passed, dict):
+                # Shape is judged BEFORE the local-member filter, for the same
+                # reason `inherit` is: `secrets:` that is neither a mapping nor
+                # `inherit` is a caller GitHub will refuse, and dropping it here
+                # because the member happens to live in another repository
+                # reports CLEAN over a call that cannot work. The filter below
+                # exists only to gate `declared` lookups, which are meaningless
+                # for an external member -- it was never meant to gate validity.
+                #
+                # Without this, a bare string reaching `set(passed)` below is
+                # iterated CHARACTER by character, reporting a finding per
+                # letter -- red for the wrong reason.
+                raise PolicyError(
+                    f"{path.name} job `{job}`: `secrets:` is neither a mapping "
+                    f"nor `inherit` ({type(passed).__name__})"
+                )
             if not local:
                 continue
             member = uses.rsplit("/", 1)[-1]
@@ -617,9 +633,10 @@ def check_secrets() -> int:
             # GitHub refuses to start that call, which is the loud failure
             # `required: true` was chosen for -- but it fails on the first run
             # after merge, and the pairing is checkable here at review time.
-            # `inherit` satisfies every requirement, and has already been
-            # rejected above, so everything reaching here is a mapping or None.
-            supplied = set(passed) if isinstance(passed, dict) else set()
+            # `inherit` and every non-mapping shape have already been rejected
+            # above, so `passed` here is a mapping or None -- None meaning the
+            # caller wires nothing, which is exactly what this loop reports.
+            supplied = set(passed) if passed is not None else set()
             for name in sorted(declared.get(member, set()) - supplied):
                 errors.append(
                     f"{path.name} job `{job}` calls {member}, which requires "
@@ -628,15 +645,6 @@ def check_secrets() -> int:
                 )
             if passed is None:
                 continue
-            if not isinstance(passed, dict):
-                # Anything else under `secrets:` is not a name->value mapping.
-                # Without this, a bare string falls through to `set(passed)`
-                # below and is iterated CHARACTER by character, reporting a
-                # finding per letter -- red for the wrong reason.
-                raise PolicyError(
-                    f"{path.name} job `{job}`: `secrets:` is neither a mapping "
-                    f"nor `inherit` ({type(passed).__name__})"
-                )
             if member not in declared:
                 # Not our business here: `docs`/`cadence` cover missing members.
                 continue
