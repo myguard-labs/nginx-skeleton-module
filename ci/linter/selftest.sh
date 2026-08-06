@@ -180,6 +180,9 @@ policy_ 1 secrets-optional secrets
 # spec that is a real mapping without the key separates the two.
 policy_ 1 secrets-no-required-key secrets
 policy_ 1 secrets-undeclared secrets
+# The mirror of secrets-undeclared, and the direction the check missed when
+# first written: member requires it, caller wires nothing.
+policy_ 1 secrets-required-not-wired secrets
 policy_ 0 secrets-typed-ok secrets
 
 # A mistyped pool label in a schedule-only workflow. The trust half of the

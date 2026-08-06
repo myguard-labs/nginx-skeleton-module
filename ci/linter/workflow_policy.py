@@ -551,12 +551,12 @@ def check_secrets() -> int:
         # Same `on:`-spelling quirk events() documents: PyYAML resolves the bare
         # key to True. Only the mapping form can carry a secrets: block.
         node = data.get("on", data.get(True))
-        call = node.get("workflow_call") if isinstance(node, dict) else None
         # `workflow_call:` (null) and `workflow_call: {}` are the same workflow
         # to GitHub. Both must register as members, or a caller passing a secret
         # to a null-spelled member reads as "unknown member" and goes unchecked.
         if not isinstance(node, dict) or "workflow_call" not in node:
             continue
+        call = node["workflow_call"]
         if call is not None and not isinstance(call, dict):
             raise PolicyError(f"{path.name}: workflow_call is not a mapping")
         secrets = (call or {}).get("secrets") or {}
@@ -596,6 +596,20 @@ def check_secrets() -> int:
             if not isinstance(uses, str) or not uses.startswith("./.github/workflows/"):
                 continue
             passed = spec.get("secrets")
+            member = uses.rsplit("/", 1)[-1]
+            # The other direction: a member that REQUIRES a secret nobody wires.
+            # GitHub refuses to start that call, which is the loud failure
+            # `required: true` was chosen for -- but it fails on the first run
+            # after merge, and the pairing is checkable here at review time.
+            # `inherit` satisfies every requirement, so it is not missing.
+            if passed != "inherit":
+                supplied = set(passed) if isinstance(passed, dict) else set()
+                for name in sorted(declared.get(member, set()) - supplied):
+                    errors.append(
+                        f"{path.name} job `{job}` calls {member}, which requires "
+                        f"secret `{name}`, but does not pass it -- GitHub refuses "
+                        "to start the call"
+                    )
             if passed is None:
                 continue
             if passed == "inherit":
@@ -614,7 +628,6 @@ def check_secrets() -> int:
                     f"{path.name} job `{job}`: `secrets:` is neither a mapping "
                     f"nor `inherit` ({type(passed).__name__})"
                 )
-            member = uses.rsplit("/", 1)[-1]
             if member not in declared:
                 # Not our business here: `docs`/`cadence` cover missing members.
                 continue
