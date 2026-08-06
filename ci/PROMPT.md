@@ -1166,16 +1166,32 @@ tool missing) + the tracked hook. Behind it:
   `skeleton-findings.md`.
 - **keep every checker the target already ran** (rule 2), behind the same entry point
   rather than dropped because the reference lacks it.
-- the three **repo-policy** checks do not transfer unexamined: `ci-runners` depends
+- the **repo-policy** checks do not transfer unexamined: `ci-runners` depends
   on `TRUST_SPLITS` being rewritten (step 14), and `ci-ports` is meaningful only if
   the target binds a fixed band. A target whose driver picks its own port should say
   so in the README and skip it loudly, not carry a check that can never fire.
-- `lint.yml`'s `LINT_ONLY` string diverges with the checker set. The reference runs
-  `nginx sh python perl yaml spelling ci-runners ci-ports docs-drift`; that is not a
-  constant to copy, and nothing cross-checks it against the scripts that exist.
-  **Compare normalized sets:** strip the directory, `lint-` prefix and `.sh` suffix
-  from every `ci/linter/lint-*.sh`; split `LINT_ONLY` on whitespace; sort both
-  uniquely.
+  `ci-cadence` assumes the single-orchestrator topology of step 16–18, so port it
+  after that lands, not before. `ci-secrets` is **vacuously green on a target that
+  declares no secrets**, which is most of them and is the correct state — its member
+  half only starts paying when the target adds its first, while its caller half
+  (no `secrets: inherit`, nothing passed to a member that never declared it) is
+  live immediately. Say which half applies rather than reporting it as covered.
+  `sync-stamp` is the one check whose value is entirely in the OTHER direction:
+  it tells the reference which adopter drifted, so an adopter running it in
+  isolation gets a stamp file and no signal. Stamp on adoption, then diff
+  `--list` against the reference when a later sync is proposed.
+- `lint.yml`'s `LINT_ONLY` string diverges with the checker set, and it is not a
+  constant to copy — read the reference's current value rather than any string
+  quoted in a document, this one included. **Compare normalized sets:** strip the
+  directory, `lint-` prefix and `.sh` suffix from every `ci/linter/lint-*.sh`;
+  split `LINT_ONLY` on whitespace; sort both uniquely. The allowlist is narrower
+  than the glob `run-all.sh` discovers, so a checker missing from it runs locally
+  and in the hook while being **absent from every PR** — a gate missing from the
+  one path where it is load-bearing. That is not hypothetical: `lint-ci-cadence.sh`
+  shipped here in 2026-08-06 and had never run remotely when it was noticed.
+  The reference now carries that comparison as a `selftest.sh` case ("every
+  checker is named in lint.yml LINT_ONLY"), with `c` as the one deliberate
+  exclusion. Port the case, not just the current string.
 
 **Acceptance:** every checker the target ran before still runs, behind `run-all.sh`;
 the normalized `LINT_ONLY` and checker-script sets match exactly; every added or
@@ -1450,8 +1466,8 @@ invalidates it.
 
 ## 46 — Does every checker still bite? `[sonnet or a stronger model]`
 
-`zizmor`, `actionlint`, `yamllint`, `semgrep`, `codespell` and the three repo-policy
-checks were installed at steps 32–34. This does not re-install them; it asks whether
+`zizmor`, `actionlint`, `yamllint`, `semgrep`, `codespell`, the C and nginx checkers
+and the repo-policy checks were installed at steps 32–34. This does not re-install them; it asks whether
 each still fires. A checker that has become a no-op reports the same clean line as one
 that passes.
 
@@ -1479,8 +1495,9 @@ explicit answer.
   clean actionlint as evidence about runner labels; that is probe 2's job (step 15)
   and probe 2 only.
 - Confirm `LINT_ONLY`'s string in `lint.yml` still matches the checkers that actually
-  exist, using step 34's normalized comparison — it diverges as the set changes and
-  nothing cross-checks it.
+  exist, using step 34's normalized comparison. If step 34's selftest case was ported,
+  this is a re-run rather than a manual diff; if it was not, say why, because the
+  set diverges every time a checker is added and the gap is invisible from a green run.
 - `run-all.sh` reads `git ls-files`: a **new untracked file is invisible to the
   linter**. Stage before trusting a clean run.
 - Re-time the hook against the ~2s budget, `/proc/loadavg` checked first.

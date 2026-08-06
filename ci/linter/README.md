@@ -36,13 +36,14 @@ Thresholds deliberately match `.github/workflows/security-scanners.yml`. Move
 one there and move it here **in the same commit**, or local-green stops
 predicting remote-green — the only reason this directory exists.
 
-The last four are **repo-policy** checks, not general linters, and that is why
-they are here rather than left to actionlint or zizmor. Those two read a workflow
-against general knowledge — syntax, and a catalogue of known attack shapes. These
-encode facts only this repo knows: which self-hosted labels exist, that the
-runners are persistent and shared with the Debian package builds, which port band
-each job owns, that `ci.yml` is the single orchestrator, and which file documents
-the pipeline. Each one goes red when a
+The `ci-*`, `docs-drift` and `sync-stamp` rows are **repo-policy** checks, not
+general linters, and that is why they are here rather than left to actionlint or
+zizmor. Those two read a workflow against general knowledge: syntax, and a
+catalogue of known attack shapes. These encode facts only this repo knows: which
+self-hosted labels exist, that the runners are persistent and shared with the
+Debian package builds, which port band each job owns, that `ci.yml` is the single
+orchestrator, that a member's secret surface is declared at the member, which
+files an adopter copies, and which file documents the pipeline. Each one goes red when a
 NEW workflow is added without a property every existing workflow happens to have
 — the case where copying an existing file is the only thing between the repo and
 a regression, and nothing enforces the copy.
