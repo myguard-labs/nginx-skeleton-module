@@ -1419,9 +1419,29 @@ exists, or the evidence-based not-applicable result when it does not.
 ## 44 — Run the soaks, or prove they can be skipped `[sonnet or a stronger model]`
 
 **Running the soaks is conditional** — this step is the decision plus whichever branch
-it lands on. 600s memcheck plus helgrind on code that has not moved since the last
-green deep run re-proves a known result. Skip if **all** of the following are
-unchanged since that run:
+it lands on. There are two independent questions here and they fail in different ways:
+**which** soaks are applicable to this module, and **whether** those can be skipped for
+this commit. The diff gate below answers only the second.
+
+**Which soaks are applicable.** Step 43 already settles this for helgrind: no shared
+state across workers, record the evidence-based not-applicable result. The same rule
+governs the memcheck soaks, keyed on the request surface instead. A soak is applicable
+if the module registers anything on the request path — a content or access handler, a
+header or body filter, or a phase handler installed at `postconfiguration`. Nearly
+every module does; if this one clearly does, say so in one line and move to the diff
+gate. Claiming a soak is **not** applicable is the exclusionary case and needs the same
+evidence step 43 demands: the file:line proving the module registers no such callback.
+
+"No request surface" is a statement about code, so it is checkable, and it has already
+been claimed and been false. A real adoption asserted it for a module whose
+`nla_upstream.c` registers phase handlers, filters and a CORS content handler, with
+`ci/t/*_e2e.*` driving it over live HTTP the whole time; the claim came from reading
+the directives and not the registrations. Narrowing the soak set on that assumption is
+the same failure as skipping it: the report is clean because nothing ran.
+
+**Whether they can be skipped for this commit.** 600s memcheck plus helgrind on code
+that has not moved since the last green deep run re-proves a known result. Skip if
+**all** of the following are unchanged since that run:
 
 ```sh
 LAST=$(gh run list --workflow ci-deep.yml --status success --limit 1 \
@@ -1441,11 +1461,14 @@ pins weekly and `ci-deep.yml` runs monthly, so a module with **zero source commi
 still be running against a new nginx**. Commit recency in `src/` alone is the wrong
 clock. A submodule bump of `ci/vendor/nginx-tests` counts the same way.
 
-**Acceptance:** when run — each applicable soak is under real load and reaches the
-module (step 40's evidence applies), a deliberate leak is reported before you trust
-it, and wall-clock per soak is stated. When skipped — the sha you compared against is
-proven to be a qualifying green `ci-deep` baseline and the full empty diff is in the
-PR body. A silent skip is indistinguishable from a soak that never existed.
+**Acceptance:** the applicable set is stated either way — one line when the module
+plainly has a request surface, the file:line of the absent registration when a soak is
+excluded. When run — each applicable soak is under real load and reaches the module
+(step 40's evidence applies), a deliberate leak is reported before you trust it, and
+wall-clock per soak is stated. When skipped — the sha you compared against is proven to
+be a qualifying green `ci-deep` baseline and the full empty diff is in the PR body. A
+silent skip is indistinguishable from a soak that never existed, and a silent narrowing
+is indistinguishable from a silent skip.
 
 ## 45 — Re-audit caching `[sonnet or a stronger model]`
 
