@@ -1247,13 +1247,23 @@ Two things that make local-green predict remote-green:
 
 - **Tracked hook at `.githooks/pre-commit`**, enabled with
   `git config core.hooksPath .githooks`. Lints STAGED files only.
+- **Install the linters the target's own languages need, and wire each into the
+  hook.** The hook runs `run-all.sh`, so a checker installed but not selected by
+  `run-all.sh`'s glob never fires from a commit. Derive the set from what the
+  target actually contains — C, nginx config, shell, Perl, Python, YAML, workflow
+  YAML, Lua, Rust — add the missing installs to `install-linters.sh` (step 32's
+  ordering: `apt-get`, then `pipx`, then `cpan`, then upstream binary), add the
+  matching `lint-<name>.sh`, and give it a row in the linter README. A language
+  present in the tree with no checker behind the hook is a finding, not a default.
 - **Thresholds mirror `security-scanners.yml`.** Move one there, move it here in the
   same commit, or the two drift and the local gate stops meaning anything.
 
 Watch the top-level exclude: a global exclude in `.pre-commit-config.yaml` runs
 before every hook, so one broad pattern can blind every checker at once.
 
-**Acceptance:** a staged file with a deliberate finding is blocked by the hook; every
+**Acceptance:** a staged file with a deliberate finding is blocked by the hook —
+one such file **per language present in the target**, each shown blocked, so a
+missing or unwired checker fails here instead of passing silently; every
 threshold in `ci/linter/` matches its counterpart in `security-scanners.yml`, listed
 pair by pair.
 
