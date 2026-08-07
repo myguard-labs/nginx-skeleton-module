@@ -45,10 +45,26 @@ SEEN RED (2026-08-01, mutations applied to src/ and the module rebuilt):
       -> test_marker_split_across_chunks FAILS at the first interior split
          ("returned 405, want 403"), while the clean control stays green.
 
-test_reload_under_load has NO cheap mutation control, and that is stated rather
-than glossed: the defect it hunts is a conf-struct lifetime bug across SIGHUP,
-which cannot be injected with a one-line edit the way the carry can. Treat it as
-exercised, not as proven -- the distinction the repo's coverage note draws.
+  * a reload that swaps the location to `skel off` (injected by overriding
+      Server.reload, since no one-line source edit produces it)
+      -> test_reload_under_load FAILS with "165/349 requests stopped being
+         blocked across a reload"; the clean control stays green.
+
+test_reload_under_load still has no cheap SOURCE mutation, and that is stated
+rather than glossed: the defect it hunts is a conf-struct lifetime bug across
+SIGHUP, which cannot be injected with a one-line edit the way the carry can. The
+control above proves the case detects a lost verdict, not that it detects that
+particular lifetime bug. Treat it as exercised, not as proven -- the distinction
+the repo's coverage note draws.
+
+WHY THE SEAM CASES ARE HERE AND NOT IN ci/t/ (tried and reverted 2026-08-07):
+`--- raw_request` with an arrayref does NOT express "N requests, one connection
+each" -- Test::Nginx::Socket::get_req_from_block turns an arrayref into ONE
+request split into packets. A ci/t/ port of the every-interior-byte split
+therefore sent one giant request, matched the first status line, and passed
+green against the `keep = 0` mutation above. `--- pipelined_requests` shares one
+connection, so it cannot carry per-case `Connection: close` either. The cases
+below stay here. See ci/PROMPT.md step 25.
 
 Exit: 0 all cases passed, 1 a case failed, 2 the fixture could not start.
 """
@@ -66,6 +82,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -353,22 +370,61 @@ def test_reload_under_load(srv: Server) -> None:
     leaves an old worker serving with a freed conf struct usually keeps
     answering, it just stops blocking. So the marker stream must stay 403 for
     its whole duration, across the reload.
+
+    Driven by OBSERVED reloads, not by sleeps. The previous form napped 1s
+    either side of each SIGHUP and ran a 5s deadline; that is 5s of wall clock
+    to make a 2-reload assertion, and -- worse -- it never checked that a
+    reload had actually completed while traffic was in flight. On a loaded
+    build host a SIGHUP that had not yet been processed when the hammer
+    stopped left the case asserting nothing but "the server answered 403",
+    which test_marker_is_blocked already proves. Waiting on the master's
+    "start worker process" lines makes the reload a precondition of the
+    assertion instead of a hope, and finishes as soon as it is met.
     """
-    deadline = time.monotonic() + 5.0
+
+    # Each reload cycle logs a fresh set of these at `notice`.
+    def worker_starts() -> int:
+        return srv.errors().count("start worker process")
+
     seen: list[int] = []
+    lock = threading.Lock()
+    stop = threading.Event()
+    base = worker_starts()
 
     def hammer() -> None:
-        while time.monotonic() < deadline:
-            seen.append(get(srv.port, f"/scan?q={MARKER}"))
+        # A local batch under one lock at the end: `list.append` from 8 threads
+        # happens to be atomic under the GIL today, but this suite also runs on
+        # the free-threaded build in ci-deep.yml, where it is not.
+        mine: list[int] = []
+        while not stop.is_set():
+            mine.append(get(srv.port, f"/scan?q={MARKER}"))
+        with lock:
+            seen.extend(mine)
 
     with ThreadPoolExecutor(max_workers=8) as pool:
         futures = [pool.submit(hammer) for _ in range(8)]
-        time.sleep(1.0)
-        srv.reload()
-        time.sleep(1.0)
-        srv.reload()
-        for f in futures:
-            f.result()
+        try:
+            for n in (1, 2):
+                # Requests are already in flight (the pool is running), so the
+                # SIGHUP lands under load, which is the whole point of R3.
+                srv.reload()
+                deadline = time.monotonic() + 10.0
+                # 2 workers per cycle; require the full set so the assertion
+                # spans a COMPLETED reload, not a half-swapped one.
+                want = base + 2 * n
+                while worker_starts() < want and time.monotonic() < deadline:
+                    time.sleep(0.02)
+                if worker_starts() < want:
+                    raise Failure(
+                        f"reload {n} did not bring up new workers within 10s "
+                        f"(saw {worker_starts() - base} starts, want {2 * n}); "
+                        "the reload never completed, so this case would have "
+                        "asserted nothing"
+                    )
+        finally:
+            stop.set()
+            for f in futures:
+                f.result()
 
     if not seen:
         raise Failure("no requests completed during the reload window")

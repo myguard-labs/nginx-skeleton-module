@@ -86,6 +86,12 @@ PIPX_TOOLS=(
                                       # skipping the secret and C SAST gates.
 )
 # apt has no libtest-nginx-perl on every target release; cpan always does.
+#
+# "Test::Nginx" IS the openresty test suite -- there is no separately-named
+# openresty distribution to look for. The CPAN dist is AGENT/Test-Nginx-*.tar.gz
+# (AGENT = agentzh / Yichun Zhang, openresty's author); confirm with
+# `cpanm --info Test::Nginx`. The giveaway in an installed tree is the
+# Test::Nginx::Socket::Lua* modules, which only that dist ships.
 CPAN_MODULES=(
     "Test::Nginx::Socket"        # the ci/t/*.t suite; also makes `perl -c` work
     "Perl::Critic"               # fallback if libperl-critic-perl was missing
