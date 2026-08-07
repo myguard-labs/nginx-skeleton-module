@@ -1243,7 +1243,7 @@ hiding a tool from `PATH`. Both deferred probes red, with output.
 
 ## 33 — The tracked hook and the threshold mirror `[sonnet or a stronger model]`
 
-Two things that make local-green predict remote-green:
+Three things that make local-green predict remote-green:
 
 - **Tracked hook at `.githooks/pre-commit`**, enabled with
   `git config core.hooksPath .githooks`. Lints STAGED files only.
@@ -1255,6 +1255,23 @@ Two things that make local-green predict remote-green:
   ordering: `apt-get`, then `pipx`, then `cpan`, then upstream binary), add the
   matching `lint-<name>.sh`, and give it a row in the linter README. A language
   present in the tree with no checker behind the hook is a finding, not a default.
+- **The same linters gate all three points: the hook, the PR, and the merge.**
+  One entry point (`run-all.sh`) invoked from three places, never a
+  reimplementation per place — a CI-only copy drifts from the hook and the two
+  stop agreeing.
+  1. **hook** — `.githooks/pre-commit`, staged files.
+  2. **PR** — `lint.yml` as a `workflow_call:` member of `ci.yml` (step 16–18),
+     so it runs once per PR on the single `pull_request:` entry point.
+  3. **merge** — `lint.yml` must ALSO carry a `push:` trigger on the default
+     branch. Without it, everything that bypasses the PR lane is unlinted:
+     a `--no-verify` commit, a clone that never ran
+     `git config core.hooksPath .githooks`, a direct push by an account whose
+     ruleset lets it through, and the merge commit itself, whose content no
+     member PR ever saw. Adding `push:` here does not violate step 18 — that
+     rule is about `pull_request:` having exactly one entry point, and a
+     default-branch `push:` is a different lane that cannot double-run a PR.
+     Prove it: push a deliberate finding to the default branch (or read a real
+     merge run) and show `lint.yml` going red there, not just on the PR.
 - **Thresholds mirror `security-scanners.yml`.** Move one there, move it here in the
   same commit, or the two drift and the local gate stops meaning anything.
 
@@ -1263,9 +1280,10 @@ before every hook, so one broad pattern can blind every checker at once.
 
 **Acceptance:** a staged file with a deliberate finding is blocked by the hook —
 one such file **per language present in the target**, each shown blocked, so a
-missing or unwired checker fails here instead of passing silently; every
-threshold in `ci/linter/` matches its counterpart in `security-scanners.yml`, listed
-pair by pair.
+missing or unwired checker fails here instead of passing silently; `lint.yml`
+runs on the PR **and** on a default-branch push, both shown red against a real
+finding, with the run URLs quoted; every threshold in `ci/linter/` matches its
+counterpart in `security-scanners.yml`, listed pair by pair.
 
 ## 34 — The checker set is the target's `[sonnet or a stronger model]`
 
