@@ -1243,7 +1243,7 @@ hiding a tool from `PATH`. Both deferred probes red, with output.
 
 ## 33 — The tracked hook and the threshold mirror `[sonnet or a stronger model]`
 
-Three things that make local-green predict remote-green:
+Four things that make local-green predict remote-green:
 
 - **Tracked hook at `.githooks/pre-commit`**, enabled with
   `git config core.hooksPath .githooks`. Lints STAGED files only.
@@ -1255,23 +1255,34 @@ Three things that make local-green predict remote-green:
   ordering: `apt-get`, then `pipx`, then `cpan`, then upstream binary), add the
   matching `lint-<name>.sh`, and give it a row in the linter README. A language
   present in the tree with no checker behind the hook is a finding, not a default.
-- **The same linters gate all three points: the hook, the PR, and the merge.**
-  One entry point (`run-all.sh`) invoked from three places, never a
-  reimplementation per place — a CI-only copy drifts from the hook and the two
-  stop agreeing.
+- **The same linters gate the hook and the PR — and `lint.yml` gets no `push:`
+  trigger to "also cover the merge".** One entry point (`run-all.sh`) invoked
+  from both places, never a reimplementation per place; a CI-only copy drifts
+  from the hook and the two stop agreeing.
   1. **hook** — `.githooks/pre-commit`, staged files.
   2. **PR** — `lint.yml` as a `workflow_call:` member of `ci.yml` (step 16–18),
      so it runs once per PR on the single `pull_request:` entry point.
-  3. **merge** — `lint.yml` must ALSO carry a `push:` trigger on the default
-     branch. Without it, everything that bypasses the PR lane is unlinted:
-     a `--no-verify` commit, a clone that never ran
-     `git config core.hooksPath .githooks`, a direct push by an account whose
-     ruleset lets it through, and the merge commit itself, whose content no
-     member PR ever saw. Adding `push:` here does not violate step 18 — that
-     rule is about `pull_request:` having exactly one entry point, and a
-     default-branch `push:` is a different lane that cannot double-run a PR.
-     Prove it: push a deliberate finding to the default branch (or read a real
-     merge run) and show `lint.yml` going red there, not just on the PR.
+
+  The merge looks like a third gap and is not. `workflow_call` does **not**
+  suppress a member's own triggers, so a member carrying `push:` runs twice per
+  change — once on the PR, once on the merge commit, against a tree identical to
+  the PR head that already passed. The two runs get different concurrency keys,
+  so `cancel-in-progress` cannot collapse them, and both are green: the only
+  symptoms are the bill and a README that no longer describes what runs when.
+  This is enforced, not merely advised — `check_cadence()` in
+  `ci/linter/workflow_policy.py` fails any `workflow_call` member that also
+  carries `push:` or `pull_request:` (`schedule:` is allowed, which is how
+  `codeql.yml` and `ci-deep.yml` carry their own cadence). Downstream it cost
+  five stray post-merge runs across six of seven members before review caught
+  it.
+
+  What actually reaches the default branch unlinted is a **direct push** — a
+  `--no-verify` commit, a clone that never ran
+  `git config core.hooksPath .githooks`, or an account the ruleset lets through.
+  That is a branch-protection problem, not a trigger problem: require the PR
+  lane on the default branch so nothing arrives without one. If the target
+  cannot enforce that, record it in `adoption-findings.md` — do not "fix" it by
+  adding a `push:` trigger the cadence linter will reject.
 - **Thresholds mirror `security-scanners.yml`.** Move one there, move it here in the
   same commit, or the two drift and the local gate stops meaning anything.
 
@@ -1281,9 +1292,10 @@ before every hook, so one broad pattern can blind every checker at once.
 **Acceptance:** a staged file with a deliberate finding is blocked by the hook —
 one such file **per language present in the target**, each shown blocked, so a
 missing or unwired checker fails here instead of passing silently; `lint.yml`
-runs on the PR **and** on a default-branch push, both shown red against a real
-finding, with the run URLs quoted; every threshold in `ci/linter/` matches its
-counterpart in `security-scanners.yml`, listed pair by pair.
+shown red on a PR against a real finding, with the run URL quoted;
+`LINT_ONLY=ci-cadence ci/linter/run-all.sh` green, proving no member picked up a
+second entry point; every threshold in `ci/linter/` matches its counterpart in
+`security-scanners.yml`, listed pair by pair.
 
 ## 34 — The checker set is the target's `[sonnet or a stronger model]`
 
