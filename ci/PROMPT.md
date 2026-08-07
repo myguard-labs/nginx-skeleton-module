@@ -341,6 +341,8 @@ ls src 2>/dev/null || ls *.c *.h                         # C at root?
 ls src/*_scan.c src/*_scan.h *_scan.c 2>/dev/null        # decision seam? (step 7)
 grep -ln 'ngx_http_request_t' src/*_scan.c *_scan.c 2>/dev/null  # expect no hits
 grep -nE '!\[' README.md                                 # badge row + order
+ls ci/t/*.t t/*.t tests/*.t 2>/dev/null | wc -l          # how many .t, and WHERE?
+perl -MTest::Nginx::Socket -e1 && echo HARNESS-ok || echo HARNESS-MISSING
 git log --oneline -10
 gh run list -R <owner>/<module> --limit 20 \
    --json name,conclusion,startedAt,updatedAt,workflowName
@@ -419,8 +421,13 @@ ours; an external target has no mirror — create one only if the work is ongoin
   steps 36–37. Estimates are not acceptable there.
 - current coverage number, if any tooling exists (usually none)
 - gates it has that the reference lacks, and where they run
+- **the test harness: how many `.t` files, in which directory, and whether
+  `Test::Nginx` is installed at all** (step 3's last two probes). All three, not
+  just the last — "the harness is present" and "the suite it is supposed to
+  run is present, where `prove` will look for it" are different facts, and
+  step 6's baseline is meaningless without both.
 
-**Acceptance:** all seven items written down. The three workflow buckets and the
+**Acceptance:** all eight items written down. The three workflow buckets and the
 per-workflow wall-clock table are the two later steps cannot reconstruct once files
 have moved.
 
@@ -430,6 +437,37 @@ have moved.
 it is already red, that is a finding and a fact every later PR body must state —
 otherwise the first step that lands code inherits blame for a failure that predates
 it. Do not stop; do not fix it.
+
+**Before the baseline can mean anything, answer step 5's harness item.** Do not
+run `prove` until both halves are answered in writing, because both failure modes
+here produce a result that looks like an answer:
+
+- **`HARNESS-MISSING` from step 3?** Install it, and say so in the record —
+  `install-linters.sh`, which is what installs `Test::Nginx::Socket`, is not ported
+  until step 32, so nothing before that step guarantees the suite can run at all.
+  `perl -MTest::Nginx::Socket -e1 || sudo cpanm --notest --quiet Test::Nginx`
+  (apt has no `libtest-nginx-perl` on every target release; CPAN always does).
+
+  `Test::Nginx` **is** the openresty Perl test suite — the two names in this
+  document are one thing, and there is no separately-named openresty package to
+  hunt for. The dist is `AGENT/Test-Nginx-*.tar.gz`, AGENT being agentzh,
+  openresty's author; confirm with `cpanm --info Test::Nginx`. In an installed
+  tree the giveaway is the `Test::Nginx::Socket::Lua*` modules, which only that
+  dist ships.
+
+- **Zero `.t` files where you are about to point `prove`?** Then the baseline is
+  not green, it is absent. The target's suite may still be in `t/` or `tests/`
+  (step 10 is what moves it), so `prove ci/t/` run before that move reports
+  success having executed nothing.
+
+Both traps are the same trap, and only one of them is loud. A missing harness at
+least fails visibly (`Result: FAIL`, "Failed to get the version of the Nginx in
+PATH"). The quiet one is the empty directory: **`prove` on a path with no `.t`
+files exits 0 with `Result: NOTESTS`** — verified, not assumed. So record the test
+COUNT beside the verdict, check it against step 5's count, and treat `NOTESTS` as
+"could not run", never as a pass — the same rule step 25's `-k` guard and
+`run-all.sh`'s `LINT_ONLY` apply. A baseline of zero tests recorded as "green"
+makes every later comparison in this document meaningless.
 
 **Emit the run plan as a todo list.** As the last act of this step, call `TodoWrite`
 once with **exactly one item per PR** plus the barriers inside PR1 — not one per
@@ -453,7 +491,10 @@ it merges, or when every step is evidence-proven already done/not needed and no 
 is required.
 
 **Acceptance:** the baseline result recorded — pass, or the named failing tests —
-and the todo list written with steps 1–6 already closed.
+**with the number of tests that actually ran, and that number matching step 5's
+`.t` count**; the harness recorded as present or installed here; and the todo list
+written with steps 1–6 already closed. A baseline whose test count is zero, or
+which nobody compared against step 5, is not a baseline.
 
 ---
 
@@ -987,8 +1028,70 @@ proves the module is loaded and blocking before anything else runs**.
 
 The rejected-test list applies unchanged.
 
-**Acceptance:** the suite is green, and the baseline case exists and asserts the
-module is loaded — its mutation is step 26's job.
+### What belongs here, and what belongs in `ci/t/`
+
+The driver is the expensive layer: it owns a whole server, and its cases are
+invisible to the harness's error-log and servroot assertions. Put a case here
+only when Test::Nginx genuinely cannot express it. The line, measured rather
+than assumed (2026-08-07):
+
+- **Stays in the driver** — many requests *in flight at once* (concurrency), and
+  anything driving a signal at the master while traffic runs (reload under
+  load). Test::Nginx is one request at a time; neither shape survives the move.
+- **Stays in the driver, less obviously** — a property asserted over *N separate
+  requests that each need their own connection*, such as splitting a marker at
+  every interior byte, one chunk per side. `--- raw_request` with an arrayref
+  looks like it expresses this and does not: `Test::Nginx::Socket::get_req_from_block`
+  turns an arrayref into **one** request split into packets, not N requests. A
+  flattened list of N requests therefore sends one giant request, the first
+  status line matches, and the file passes while asserting nothing. This was
+  tried, went green against the `keep = 0` seam mutation that the driver catches,
+  and was reverted. `--- pipelined_requests` is not the fix either — those share
+  one connection, so no case in the batch can carry `Connection: close`.
+- **Belongs in `ci/t/`** — a single request with a single verdict, including one
+  hand-picked buffer straddle (04-coverage-gaps.t TEST 9, 14). Cheaper there, and
+  it gets `--- error_log` for free.
+
+So the migration to make is the reverse of the tempting one: do not move the seam
+cases out of the driver. Do keep the driver's baseline/clean/off cases even
+though `ci/t/01-modes.t` covers the same ground — they are this file's own
+loaded-and-blocking control, and without them a module that failed to load reads
+as a run of green allow-cases.
+
+### Audit what you added — the driver accretes
+
+The three exemptions above are narrow, and the driver is the path of least
+resistance: it is plain Python, so a case that would have been six lines of
+`ci/t/` DATA gets written here instead, and then runs on every push inside a
+private server nobody's error-log assertions can see. If the target arrived with
+its own runtime driver, or you added cases to this one, go through them once and
+move back everything that is single-request-single-verdict.
+
+For each case in the driver, ask: **does it need more than one request in flight,
+a signal at the master, or its own connection per assertion?** No to all three →
+it belongs in `ci/t/`. Rewrite it there, confirm the test count went up by what
+you moved, and delete the driver case in the same commit — a case left in both
+places is worse than either, because the next person to change the behaviour
+fixes one and ships the other still asserting the old contract.
+
+Do not take a green as proof the move was faithful. Port a case, then break the
+behaviour it covers and confirm the NEW location goes red; that is the only thing
+that separates a real move from the vacuous one described above.
+
+### Cost
+
+The driver runs on every push, so a fixed sleep in it is paid forever. Assert on
+an **observed** event, not on a nap: wait for the master's `start worker process`
+lines to reach the expected count rather than sleeping either side of a SIGHUP.
+In the reference this cut `test_reload_under_load` from 5.01s to 0.12s *and*
+strengthened it — the sleeping form never checked that a reload had completed
+while requests were in flight, so on a loaded host it could assert nothing
+beyond what the baseline case already proves.
+
+**Acceptance:** the suite is green; the baseline case exists and asserts the module
+is loaded (its mutation is step 26's job); and every remaining driver case is
+justified by one of the three exemptions above, with anything else moved to `ci/t/`
+and its move proved by a red in the new location.
 
 ## 26 — Mutation pass over the live-server layer `[sonnet or a stronger model]`
 
