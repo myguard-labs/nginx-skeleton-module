@@ -1423,14 +1423,17 @@ it lands on. There are two independent questions here and they fail in different
 **which** soaks are applicable to this module, and **whether** those can be skipped for
 this commit. The diff gate below answers only the second.
 
-**Which soaks are applicable.** A soak is applicable if the module registers anything
-on the request path — a content or access handler, a header or body filter, or a phase
-handler installed at `postconfiguration`. Nearly every module does; if this one clearly
-does, say so in one line and move to the diff gate. Claiming a soak is **not**
-applicable is the exclusionary case and is the one that needs evidence: give the
-file:line proving the module registers no such callback. "No request surface" is a
-statement about code, so it is checkable — and it has already been claimed and been
-false. A real adoption asserted "no HTTP request surface" for a module whose
+**Which soaks are applicable.** Step 43 already settles this for helgrind: no shared
+state across workers, record the evidence-based not-applicable result. The same rule
+governs the memcheck soaks, keyed on the request surface instead. A soak is applicable
+if the module registers anything on the request path — a content or access handler, a
+header or body filter, or a phase handler installed at `postconfiguration`. Nearly
+every module does; if this one clearly does, say so in one line and move to the diff
+gate. Claiming a soak is **not** applicable is the exclusionary case and needs the same
+evidence step 43 demands: the file:line proving the module registers no such callback.
+
+"No request surface" is a statement about code, so it is checkable, and it has already
+been claimed and been false. A real adoption asserted it for a module whose
 `nla_upstream.c` registers phase handlers, filters and a CORS content handler, with
 `ci/t/*_e2e.*` driving it over live HTTP the whole time; the claim came from reading
 the directives and not the registrations. Narrowing the soak set on that assumption is
