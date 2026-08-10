@@ -1015,12 +1015,68 @@ A second entry point that is not `pull_request:` (a `schedule:`, a
 `workflow_dispatch:`) is fine and normal — `bump.yml` and `ci-deep.yml` in the
 reference are schedule-driven and not members of the PR lane.
 
+**Bounded belongs in the PR lane; unbounded never does.** The split is the
+job's *wall-clock bound*, not its tool name — "fuzzing.yml" says nothing about
+duration.
+
+- **Bounded** — an explicit cap in the low minutes, sized to the step 35 budget:
+  a fuzz smoke run at `-max_total_time=120`, a targeted ASan/UBSan build, a
+  Valgrind pass over one deterministic scenario. Legitimate `workflow_call:`
+  members. The reference itself runs fuzz and Valgrind this way, and that is
+  correct — a two-minute libFuzzer pass catches the regression the PR just
+  introduced, cheaply.
+- **Unbounded** — a campaign, soak, stress run, or any job whose duration is set
+  by "how long we let it run" rather than a budget: `schedule:` +
+  `workflow_dispatch:`, or `workflow_call:` reached *only* from `ci-deep.yml`.
+  Never `pull_request:`, and never a member `ci.yml` invokes.
+
+Note both routes into the lane. Dropping `pull_request:` while leaving the job a
+`workflow_call:` member of the orchestrator satisfies this step's first grep and
+still runs the campaign on every PR.
+
+`timeout-minutes:` is a ceiling, not a duration — it says when CI gives up, not
+what the job costs. Read the actual bound (`-max_total_time`, iteration count,
+scenario list); a 45-minute timeout on a 3-minute Valgrind pass is normal and is
+not evidence of a long-runner.
+
+The reason is throughput. An unbounded job returns its verdict long after the
+merge decision it would inform, so parking one in the PR gate converts every
+merge into a wait for information that arrives too late to use. On the scheduled
+lane it keeps full value — a finding becomes a tracked follow-up instead of a
+blocked PR.
+
+This does **not** weaken step 33 or "never delete a gate the target already
+has": an unbounded job is **moved to the scheduled lane, never deleted, never
+`continue-on-error`'d**, and keeps its badge and `## CI` table row.
+
+Measured across the derived modules on 2026-08-10: 36 of 41 long-runner
+workflows were already `schedule`/`dispatch`/`call`-only. The 5 carrying
+`pull_request:` directly (`coraza-nginx` asan+fuzzing+valgrind,
+`nginx-http-sentinel-module` fuzzing+valgrind, `http-zstd` fuzzing+valgrind) are
+what this rule prevents recurring — check each against the bounded/unbounded
+split above rather than assuming the filename settles it.
+
 **Acceptance:** exactly one workflow carrying `pull_request:` **and no member
 carrying `push:`**, proved by
 
 ```sh
 grep -lE '^\s*pull_request:' .github/workflows/*.yml   # -> ci.yml alone
 grep -lE '^\s*push:' .github/workflows/*.yml           # -> empty
+
+# no long-runner reachable from the PR lane, by either route.
+# ci.yml and ci-deep.yml are excluded: the orchestrator NAMES its members, so a
+# bare keyword grep matches it and reports itself.
+grep -lEi 'valgrind|helgrind|drd|fuzz|soak|stress' .github/workflows/*.yml \
+  | grep -vE '/(ci|ci-deep)\.yml$' \
+  | xargs -r grep -lE '^\s*pull_request:'              # -> empty
+# every long-runner-named member of the PR lane, with its actual bound.
+# Not expected empty — the reference calls fuzzing.yml and valgrind.yml. Read
+# each hit and confirm a low-minutes cap (-max_total_time, iteration count, one
+# scenario). No explicit bound = unbounded = move it to the scheduled lane.
+for w in $(yq -r '.jobs[].uses // empty' .github/workflows/ci.yml \
+           | grep -Ei 'valgrind|helgrind|drd|fuzz|soak|stress'); do
+  echo "== $w"; grep -nE 'max_total_time|runs=|-runs|iterations|timeout=' "$w"
+done
 ```
 
 and a PR run in which every member ran exactly once.
