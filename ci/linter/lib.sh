@@ -29,7 +29,17 @@ need() {
 }
 
 # Paths never linted: byte-exact fuzz inputs, vendored trees, build output.
-LINT_EXCLUDE_RE='^ci/fuzz/corpus/|^ci/fuzz/regressions/|^ci/vendor/|(^|/)objs/|(^|/)\.build/|(^|/)node_modules/|(^|/)\.venv/'
+#
+# `(^|/)vendor/` and not `^ci/vendor/`: vendored code is not confined to one
+# directory any more -- ci/ast-grep/rules/vendor/ holds CodeRabbit's pack, and
+# tools/vendor-astgrep-rules.py rewrites that tree wholesale on every refresh.
+# Linting a tree we regenerate produces findings nobody may fix: the upstream
+# misspelling in string-view-temporary-string-cpp.yml and yamllint's
+# indentation complaints are theirs, and a hand-edit is reverted by the next
+# vendor run. Same regex shape as the
+# top-level exclude in .pre-commit-config.yaml, so the hook and these scripts
+# select the same files.
+LINT_EXCLUDE_RE='^ci/fuzz/corpus/|^ci/fuzz/regressions/|(^|/)vendor/|(^|/)objs/|(^|/)\.build/|(^|/)node_modules/|(^|/)\.venv/'
 
 # lint_files <match-regex> [explicit files...]
 lint_files() {
