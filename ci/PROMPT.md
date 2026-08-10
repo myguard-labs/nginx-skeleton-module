@@ -206,14 +206,10 @@ your head is not.
 
 ### How to run the job — pace, scope, spend
 
-Nine rules on *how* the run is conducted. They constrain execution, never the
-step content: none of them licenses skipping a step, weakening a gate, or
-inventing a shortcut a step forbids.
+Nine rules on *how* the run is conducted, plus a closing check. They constrain
+execution, never the step content: none of them licenses skipping a step,
+weakening a gate, or inventing a shortcut a step forbids.
 
-- **Do not grind.** This is a bounded adoption run with a defined end, not an
-  autonomous backlog loop. Work the 63 steps once, in order, and stop. Do not enter
-  `/grind`, and do not keep looking for more work after step 63's report is
-  written.
 - **Do not run the heavy tooling by hand.** Valgrind, the sanitizers, the fuzzers,
   the coverage run, the soaks — you *install and wire* them, you do not sit and
   execute them locally to prove they work. CI runs them; a scheduled lane runs the
