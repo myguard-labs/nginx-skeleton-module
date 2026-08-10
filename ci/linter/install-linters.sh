@@ -3,9 +3,9 @@
 #
 # Order of preference, per tool: apt-get (distro-managed, no PEP 668 fight)
 # -> pipx/pip (Python tools apt does not carry) -> cpan (Perl modules apt does
-# not carry) -> upstream binary (actionlint). Nothing here is a silent skip:
-# a tool that fails to install prints why and the script exits non-zero, so a
-# half-installed toolchain cannot masquerade as a working gate.
+# not carry) -> upstream binary (actionlint, ast-grep). Nothing here is a silent
+# skip: a tool that fails to install prints why and the script exits non-zero,
+# so a half-installed toolchain cannot masquerade as a working gate.
 #
 # Usage:
 #   ci/linter/install-linters.sh            install what is missing
@@ -16,10 +16,12 @@
 # ~/.local/bin (make sure it is on PATH).
 #
 # Side effects: apt-get install, pipx install, cpanm install, and one curl of
-# the actionlint release tarball into /usr/local/bin.
+# the actionlint release tarball and the ast-grep release zip into
+# /usr/local/bin.
 #
 # Extend: add a line to the APT/PIPX/CPAN lists. Anything needing a bespoke
-# install gets its own function at the bottom, next to install_actionlint.
+# install gets its own function at the bottom, next to install_actionlint
+# and install_astgrep.
 
 set -uo pipefail
 
@@ -112,6 +114,7 @@ if [ "$CHECK" -eq 1 ]; then
     for e in "${APT_TOOLS[@]}" "${PIPX_TOOLS[@]}"; do report "${e%%:*}"; done
     report actionlint
     report zizmor
+    report ast-grep
     for e in "${PY_MODULES[@]}"; do
         mod="${e%%:*}"
         if have_mod "$mod"; then
@@ -199,6 +202,49 @@ if [ "$FORCE" -eq 1 ] || ! have actionlint; then
     install_actionlint || { echo "actionlint install failed" >&2; rc=1; }
 else
     echo "present: $(command -v actionlint)"
+fi
+
+install_astgrep() {
+    # Rust binary from the upstream release: no apt package on the target
+    # releases, and the PyPI/npm wrappers pull a whole toolchain to land the
+    # same executable. Pinned by version AND sha256, digest COMPARED not
+    # printed -- same reasoning as install_actionlint above.
+    #
+    # Pinned rather than floating, unlike zizmor/codespell: ast-grep's ruleset
+    # is vendored in ci/ast-grep/ and versioned with the repo, so the pair has
+    # to move together. A floating binary meeting a pinned ruleset changes
+    # findings under you and local stops matching CI -- the semgrep/ruff
+    # reasoning, not the security-scanner reasoning.
+    #
+    # Digest verified 2026-08-10 against the GitHub release API's own
+    # asset .digest field, not merely recomputed from the download.
+    local ver="0.44.1"
+    local sha="611f9e5e76f2611ecea1a35dd3468ceedf600641a11224b80341d79c6ee7b9dd"
+    local tmp
+    tmp="$(mktemp -d)"
+    curl -fsSL -o "$tmp/ag.zip" \
+        "https://github.com/ast-grep/ast-grep/releases/download/${ver}/app-x86_64-unknown-linux-gnu.zip" || return 1
+    if ! printf '%s  %s\n' "$sha" "$tmp/ag.zip" | sha256sum -c - >/dev/null 2>&1; then
+        echo "ast-grep ${ver}: sha256 mismatch" >&2
+        echo "  expected: $sha" >&2
+        echo "  got:      $(sha256sum < "$tmp/ag.zip" | cut -d' ' -f1)" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    # The zip carries both `ast-grep` and its short alias `sg`. Only ast-grep is
+    # installed: `sg` collides with util-linux's setgid tool on Debian, and
+    # ci/linter/ and .pre-commit-config.yaml both spell it out in full.
+    unzip -qo "$tmp/ag.zip" ast-grep -d "$tmp" || return 1
+    $SUDO install -m0755 "$tmp/ast-grep" /usr/local/bin/ast-grep || return 1
+    rm -rf "$tmp"
+}
+
+step "ast-grep"
+if [ "$FORCE" -eq 1 ] || ! have ast-grep; then
+    have unzip || $SUDO apt-get install -y --no-install-recommends unzip || rc=1
+    install_astgrep || { echo "ast-grep install failed" >&2; rc=1; }
+else
+    echo "present: $(command -v ast-grep)"
 fi
 
 step "result"

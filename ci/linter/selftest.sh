@@ -256,6 +256,30 @@ fi
 case_ 0 "lint-spelling is dispatched by run-all.sh" \
     bash -c 'ci/linter/run-all.sh --list | grep -q lint-spelling.sh'
 
+# The ast-grep gate is defined TWICE -- as PROMOTED in ci/linter/lint-astgrep.sh
+# and as the --error= flags of the ast-grep hook in .pre-commit-config.yaml --
+# because the two run by different mechanisms. Two lists that must agree and are
+# only kept in step by a comment will drift, and the drift is invisible: the hook
+# passes while CI fails (or worse, the reverse), and neither output mentions the
+# other list. Compare them as sorted sets.
+pc="$(sed -n '/id: ast-grep/,/pass_filenames/p' .pre-commit-config.yaml \
+      | grep -oE '\-\-error=[a-z0-9-]+' | sed 's/--error=//' | sort -u)"
+ck="$(sed -n '/^PROMOTED=(/,/^)/p' ci/linter/lint-astgrep.sh \
+      | sed -nE 's/^[[:space:]]+([a-z0-9-]+)[[:space:]]*$/\1/p' | sort -u)"
+if [ -z "$pc" ] || [ -z "$ck" ]; then
+    # An empty side means a parse that stopped matching, not agreement. Two
+    # empty strings compare equal, so without this the control passes vacuously
+    # the moment either file is reformatted.
+    echo "FAIL ast-grep promoted-list control parsed nothing (pre-commit:$(printf '%s' "$pc" | wc -l), checker:$(printf '%s' "$ck" | wc -l))" >&2
+    rc=1
+elif [ "$pc" = "$ck" ]; then
+    echo "ok   ast-grep promoted set matches in lint-astgrep.sh and .pre-commit-config.yaml"
+else
+    echo "FAIL ast-grep promoted set differs between the hook and the checker" >&2
+    diff <(printf '%s\n' "$pc") <(printf '%s\n' "$ck") | sed 's/^/       | /' >&2
+    rc=1
+fi
+
 # Unparsable YAML is "could not run" (2), never "clean" -- GitHub may still
 # read a file this parser rejects, so a verdict over the rest of the tree would
 # be unsupported. Fixture is generated: a committed broken-YAML file would trip

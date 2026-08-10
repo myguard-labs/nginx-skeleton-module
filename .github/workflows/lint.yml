@@ -1,3 +1,4 @@
+# sync-sha: 8d9a42e9a5479c246e02c27c894c65dd8eedf6882bed1feef181a9554707e7a8
 name: Lint
 
 # The same ci/linter/ scripts a developer runs locally, run again on the PR --
@@ -10,6 +11,12 @@ name: Lint
 # are already the job of security-scanners.yml, at the same thresholds
 # (ci/linter/lint-c.sh mirrors that workflow). Running them twice per PR buys
 # nothing but queue time.
+#
+# "astgrep" IS listed, and is not covered by that exclusion. No other workflow
+# runs the ci/ast-grep/ ruleset, so leaving it out would mean the structural
+# sweep gates the hook and never a PR -- the half-gate selftest.sh's LINT_ONLY
+# set-equality case exists to catch. It is also cheap (no nginx tree, no TU
+# parse) and its blocking tier is six promoted rules, not the whole ruleset.
 #
 # runs-on: ubuntu-latest, NOT the self-hosted pool. This job needs no nginx
 # build, and ci.yml deliberately caps peak self-hosted use at three concurrent
@@ -65,6 +72,13 @@ jobs:
           # Every checker except "c" -- adding a lint-*.sh without adding its
           # name here leaves it running locally and never in CI, which is the
           # quieter half of a gate that is not really a gate.
-          LINT_ONLY: nginx sh python perl yaml spelling ci-runners ci-ports ci-cadence ci-secrets sync-stamp docs-drift
+          #
+          # ONE LINE, even though it trips yamllint's 120-column warning (which
+          # does not block). selftest.sh reads this value with a line-based
+          # `sed -n 's/^ *LINT_ONLY: *//p'`, so wrapping it in a folded scalar
+          # (`>-`) makes that parser read the literal ">-" and report EVERY
+          # checker as missing. Tried 2026-08-10; the selftest failed loudly,
+          # which is the correct direction, but the fix is to leave the line
+          # long. Rewrap only by teaching selftest.sh to parse YAML.
+          LINT_ONLY: nginx astgrep sh python perl yaml spelling ci-runners ci-ports ci-cadence ci-secrets sync-stamp docs-drift
         run: ci/linter/run-all.sh
-# sync-sha: cba3234447330359e0df59594ea0b9fa5ede84e95db0001e785320696cee411c
