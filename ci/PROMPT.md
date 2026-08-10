@@ -17,7 +17,7 @@ repo write access; reads as a checklist for a human.
 Give the target the reference's **layout, gates, workflow set, badge row, linter
 entry point and conventions**, expressed over the target's own code and tests.
 
-**63 steps in 7 phases, landing through 4 PRs.** Steps are numbered 1–63
+**64 steps in 7 phases, landing through 4 PRs.** Steps are numbered 1–64
 continuously and referenced by number throughout; the numbers are stable and
 external references (README, `ci/feedback/`) depend on them. **A step is a unit of
 work, never a PR boundary.**
@@ -185,7 +185,7 @@ here; individual steps name which class they close.
 **Default to proceeding.** This job runs unattended. Almost everything that used
 to be a stop is now a recorded finding: you write it down, degrade the affected
 step honestly, and carry on. A run that stops at step 3 with a question delivers
-nothing; a run that finishes 61 of 63 steps and hands back a precise list of the 2
+nothing; a run that finishes 62 of 64 steps and hands back a precise list of the 2
 it could not do delivers almost everything.
 
 Two files carry what you cannot act on. Create both at the start of step 1:
@@ -271,7 +271,7 @@ weakening a gate, or inventing a shortcut a step forbids.
   over eyeballing output, bounded output on every exploratory command. Read a whole
   file when you are about to change it. Delegate a read-heavy inventory or audit to
   the cheapest model that can do it.
-- **Neither overachieve nor slack.** The deliverable is the 63 steps over the
+- **Neither overachieve nor slack.** The deliverable is the 64 steps over the
   target's own content — not a rewrite of its module, not an extra gate nobody
   asked for, not a redesigned test suite. Equally: a step marked done on a
   plausible-looking edit with no Acceptance evidence is not done. Do exactly the
@@ -283,7 +283,7 @@ weakening a gate, or inventing a shortcut a step forbids.
   deviations.
 
 **Close by checking the integration point for point.** When the run is finished,
-do not summarise from memory. Walk steps 1–63 in numeric order and, for each, state
+do not summarise from memory. Walk steps 1–64 in numeric order and, for each, state
 the Acceptance condition and the evidence that it holds in the *current* tree —
 file path, run URL, probe output, or the finding that says why it is degraded or
 parked. Verify, do not assume: a step whose evidence you cannot produce is not
@@ -2124,10 +2124,20 @@ weakening the hook. Remove the temporary worktree even on failure.
 Verify the linter set actually covers what the tree contains, and that each linter runs
 with the rules it needs.
 
-- **Languages.** Enumerate the tracked file types (`git ls-files | sed 's/.*\.//' | sort |
-  uniq -c | sort -rn`) and map each one to the linter that reads it — C, headers, shell,
-  Python, YAML/workflows, Markdown, Dockerfiles, `config`/build scripts. Every type with
-  a meaningful share and no linter is a gap: install the tool, register it in
+- **Languages.** Enumerate the tracked files with their paths intact. The linter
+  inventory selects on paths, not extensions, so an extension histogram cannot tell
+  `.github/workflows/*.yml` from any other YAML and drops extensionless files such as
+  `.githooks/pre-commit`, `Dockerfile` and `config` entirely:
+
+  ```sh
+  git ls-files | awk -F/ '{ b = $NF; e = (b ~ /\./) ? b : "(none)"; sub(/.*\./, "", e);
+                            print e "\t" $0 }' | sort | uniq -c | sort -rn
+  ```
+
+  Classify extensionless basenames by content (`file`, or the shebang), not by name.
+  Map each group to the linter that reads it — C, headers, shell, Python,
+  YAML/workflows, Markdown, Dockerfiles, `config`/build scripts. Every group with a
+  meaningful share and no linter is a gap: install the tool, register it in
   `ci/linter/run-all.sh` and in the pre-commit config, or record why it is genuinely not
   applicable.
 - **Rules.** For each configured linter, compare the enabled rule set against the tool's
