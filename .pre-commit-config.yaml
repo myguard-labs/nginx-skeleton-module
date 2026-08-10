@@ -99,7 +99,12 @@ repos:
       # vector); gating on those is a pure false positive, while the hook still
       # guards every real path.
       - id: detect-private-key
-        exclude: '^tests?/'
+        # `(ci/)?` because the skeleton standard relocates the suite under ci/:
+        # a root-anchored ^tests?/ stops matching the moment a module moves
+        # tests/ to ci/tests/, and the hook then fires on the relocated PEM
+        # fixtures and blocks the move commit itself. Hit in every module
+        # adopting the ci/ layout.
+        exclude: '^(ci/)?tests?/'
 
   - repo: local
     hooks:
