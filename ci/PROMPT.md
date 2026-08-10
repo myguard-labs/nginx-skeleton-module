@@ -776,13 +776,16 @@ missing file has the same state recorded for step 32.
 
 ## 15 — Runner identity: verify, both directions `[sonnet or a stronger model]`
 
-Last of barrier A. A grep proving `builder02` is absent says nothing about whether
-the *checker* still approves it.
+Last of barrier A. For a hosted-only adopter, a grep proving `builder02` is absent
+says nothing about whether the *checker* still approves it. For a pool-owned
+adopter, the inverse mistake is just as bad: rejecting its approved selector makes
+the policy unusable. Test the branch selected by `POOL_OWNED`.
 
 ```sh
-# 1. no myguard runner identity survives anywhere
+# 1. no myguard runner identity survives in a hosted-only adopter
 grep -rn 'builder02\|b02lxc' .github/ ci/linter/workflow_policy.py 2>/dev/null
-#    -> expected: no hits for a hosted-only adopter
+#    -> POOL_OWNED=no: expected no hits
+#    -> POOL_OWNED=yes: hits are allowed only for the target's approved selectors
 
 # 1b. and no self-hosted selector survives under ANY spelling. Probe 1 greps our
 #     CURRENT label; it cannot see `[self-hosted, lxc]`, a renamed pool, or a
@@ -792,7 +795,7 @@ grep -rnE 'runs-on:.*(self-hosted|fromJSON)' .github/workflows/
 #    -> POOL_OWNED=no: MUST be empty. Any hit is a selector pointing at hardware
 #       the target does not own, whatever it is called.
 
-# 2. after step 32, the checker rejects the reference's selector
+# 2. after step 32, the checker implements the ownership decision from step 3
 cat > .github/workflows/_probe.yml <<'EOF'
 name: probe
 on:
@@ -804,7 +807,13 @@ jobs:
     steps:
       - run: echo probe
 EOF
-LINT_ONLY=ci-runners ci/linter/run-all.sh   # MUST exit 1 in the target
+# POOL_OWNED=no: MUST exit 1; this target does not own the reference pool.
+# POOL_OWNED=yes: MUST exit 0 when this is the target's approved selector.
+LINT_ONLY=ci-runners ci/linter/run-all.sh
+
+# Both branches must reject an unregistered selector.
+sed -i 's/builder02/unregistered-probe/' .github/workflows/_probe.yml
+LINT_ONLY=ci-runners ci/linter/run-all.sh   # MUST exit 1
 rm .github/workflows/_probe.yml
 ```
 
@@ -812,16 +821,20 @@ If `ci/linter/run-all.sh` does not exist yet, do not call it or port it early.
 Record probe 2 as deferred and run it immediately after step 32, before PR2 merges.
 Probe 1, probe 1b and `actionlint` are the barrier-A checks.
 
-**Probe 2 going green in the target is the bug this sequence exists for** — it means
-`TRUST_SPLITS` was copied unedited. Go back to step 14; do not delete the probe.
+**Probe 2 going green for a hosted-only target, or going red for a pool-owned
+target's approved selector, is the bug this sequence exists for.** It means
+`TRUST_SPLITS` does not match the ownership decision. Go back to step 14; do not
+delete the probe.
 
 **In the unedited reference probe 2 exits 0, correctly** — `builder02` is an
 approved selector *here*, on our machine. The probe is a statement about the TARGET.
 Running it in the reference to "check the probe works" proves nothing.
 
-**Acceptance now:** probes 1 and 1b empty and `actionlint` parses every edited
-workflow. **Barrier A is now clear; step 16 may begin. Deferred acceptance at step
-32:** probe 2 is red; paste both outputs in the PR body.
+**Acceptance now:** for `POOL_OWNED=no`, probes 1 and 1b are empty; for
+`POOL_OWNED=yes`, every hit is a target-approved selector. `actionlint` parses every
+edited workflow. **Barrier A is now clear; step 16 may begin. Deferred acceptance at
+step 32:** the ownership-appropriate selector has the expected result and the
+unregistered selector is red; paste both outputs in the PR body.
 
 ---
 
