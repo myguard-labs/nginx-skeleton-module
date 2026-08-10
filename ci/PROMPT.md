@@ -17,7 +17,7 @@ repo write access; reads as a checklist for a human.
 Give the target the reference's **layout, gates, workflow set, badge row, linter
 entry point and conventions**, expressed over the target's own code and tests.
 
-**63 steps in 7 phases, landing through 4 PRs.** Steps are numbered 1–63
+**64 steps in 7 phases, landing through 4 PRs.** Steps are numbered 1–64
 continuously and referenced by number throughout; the numbers are stable and
 external references (README, `ci/feedback/`) depend on them. **A step is a unit of
 work, never a PR boundary.**
@@ -30,7 +30,7 @@ work, never a PR boundary.**
 | 4 | 16–38 | workflows, tests, fuzzing, caching, linter, lanes | PR1 (16–22), PR2 (23–38) |
 | 5 | 39–48 | depth pass — would any of it catch anything? | PR3 |
 | 6 | 49–54 | close out: skeleton feedback, post-adoption checks, docs, report | REF49 + PR3 |
-| 7 | 55–63 | mandatory aftermath | PR4 |
+| 7 | 55–64 | mandatory aftermath | PR4 |
 
 **The four PRs.** Boundaries are fixed; do not split one into step PRs and do not
 merge a partial one.
@@ -40,7 +40,7 @@ merge a partial one.
 | PR1 | 7–22 | seam, `ci/` layout, runner identity, entry-point demotion, workflow set, badges |
 | PR2 | 23–38 | the four test layers with their mutation passes, fuzzing, coverage, caching, linter gate, lane topology |
 | PR3 | 39–54 | depth pass, post-adoption checks, docs, memory mirror, prepared report |
-| PR4 | 55–63 | aftermath: recheck, reviews, scheduled lanes, residue, gitlink |
+| PR4 | 55–64 | aftermath: recheck, reviews, scheduled lanes, residue, gitlink |
 | REF49 | 49 | the skeleton feedback PR — against the reference, not the target |
 | PR5 | — | optional, at most one: cleanup and fixes falling out of PR1–PR4 (see "How to run the job") |
 
@@ -185,7 +185,7 @@ here; individual steps name which class they close.
 **Default to proceeding.** This job runs unattended. Almost everything that used
 to be a stop is now a recorded finding: you write it down, degrade the affected
 step honestly, and carry on. A run that stops at step 3 with a question delivers
-nothing; a run that finishes 61 of 63 steps and hands back a precise list of the 2
+nothing; a run that finishes 62 of 64 steps and hands back a precise list of the 2
 it could not do delivers almost everything.
 
 Two files carry what you cannot act on. Create both at the start of step 1:
@@ -271,7 +271,7 @@ weakening a gate, or inventing a shortcut a step forbids.
   over eyeballing output, bounded output on every exploratory command. Read a whole
   file when you are about to change it. Delegate a read-heavy inventory or audit to
   the cheapest model that can do it.
-- **Neither overachieve nor slack.** The deliverable is the 63 steps over the
+- **Neither overachieve nor slack.** The deliverable is the 64 steps over the
   target's own content — not a rewrite of its module, not an extra gate nobody
   asked for, not a redesigned test suite. Equally: a step marked done on a
   plausible-looking edit with no Acceptance evidence is not done. Do exactly the
@@ -283,7 +283,7 @@ weakening a gate, or inventing a shortcut a step forbids.
   deviations.
 
 **Close by checking the integration point for point.** When the run is finished,
-do not summarise from memory. Walk steps 1–63 in numeric order and, for each, state
+do not summarise from memory. Walk steps 1–64 in numeric order and, for each, state
 the Acceptance condition and the evidence that it holds in the *current* tree —
 file path, run URL, probe output, or the finding that says why it is degraded or
 parked. Verify, do not assume: a step whose evidence you cannot produce is not
@@ -359,7 +359,7 @@ git ls-files --others --exclude-standard -z | sort -z | xargs -0r sha256sum \
 ```
 
 Record the base branch and every dirty path, so a later diff cannot be blamed on
-you. The four snapshots preserve both the path set and contents; step 62
+you. The four snapshots preserve both the path set and contents; step 63
 recreates and compares them. Keep them in `$SCRATCH`, never the target.
 
 **Hard stop only if** the directory is not a git repo, or `gh` cannot authenticate
@@ -570,7 +570,7 @@ when current-tree evidence proves every step in it; never infer completion from 
 [ ] PR2: steps 23-38 — test layers + mutations, fuzz, coverage, caching, linter, lanes
 [ ] REF49: step 49 — skeleton findings PR, or evidence-based no-op
 [ ] PR3: steps 39-54 — depth pass, post-adoption checks, docs, memory, report
-[ ] PR4: steps 55-63 — aftermath: recheck, reviews, scheduled lanes, residue, gitlink
+[ ] PR4: steps 55-64 — aftermath: recheck, reviews, scheduled lanes, residue, gitlink
 ```
 
 Keep it current: exactly one PR is `in_progress`; flip it to `completed` only when
@@ -2084,7 +2084,7 @@ merge it before opening PR4.**
 
 # Phase 7 — Aftermath
 
-**PR4.** All applicable prior PRs are merged or proven not needed. Steps 55–63 run in
+**PR4.** All applicable prior PRs are merged or proven not needed. Steps 55–64 run in
 order after migration, forwarding, or a no-op. Do not ask whether to run them. Record
 evidence for every `not needed` result. One branch, one PR — never one per aftermath
 step.
@@ -2119,18 +2119,50 @@ test "$rc" -eq 0
 A first full-tree run on an adopted module may be red; record findings without
 weakening the hook. Remove the temporary worktree even on failure.
 
-## 57 — Review the changes `[opus]`
+## 57 — Check linter coverage: languages and rules `[sonnet or a stronger model]`
+
+Verify the linter set actually covers what the tree contains, and that each linter runs
+with the rules it needs.
+
+- **Languages.** Enumerate the tracked files with their paths intact. The linter
+  inventory selects on paths, not extensions, so an extension histogram cannot tell
+  `.github/workflows/*.yml` from any other YAML and drops extensionless files such as
+  `.githooks/pre-commit`, `Dockerfile` and `config` entirely:
+
+  ```sh
+  git ls-files | awk -F/ '{ b = $NF; e = (b ~ /\./) ? b : "(none)"; sub(/.*\./, "", e);
+                            print e "\t" $0 }' | sort | uniq -c | sort -rn
+  ```
+
+  Classify extensionless basenames by content (`file`, or the shebang), not by name.
+  Map each group to the linter that reads it — C, headers, shell, Python,
+  YAML/workflows, Markdown, Dockerfiles, `config`/build scripts. Every group with a
+  meaningful share and no linter is a gap: install the tool, register it in
+  `ci/linter/run-all.sh` and in the pre-commit config, or record why it is genuinely not
+  applicable.
+- **Rules.** For each configured linter, compare the enabled rule set against the tool's
+  full set — the default profile is usually a subset. Enable the security, correctness
+  and portability rules the module needs; justify each deliberate suppression inline
+  rather than blanket-disabling a category.
+- **Blind spots.** A linter present but never reaching a path is not coverage. Confirm
+  each one's file selection matches the paths it is supposed to guard, including
+  untracked-then-added files and vendored dirs that should be excluded on purpose.
+
+**Acceptance:** a table of file type → linter → rule profile, with every gap either
+closed in PR4 or carrying its evidence-based not-applicable result.
+
+## 58 — Review the changes `[opus]`
 
 A diff review of every PR this job landed, one maintainer voice, regressions and
 contract drift.
 
-## 58 — Full code review `[opus]`
+## 59 — Full code review `[opus]`
 
 Audit the module's own C, not just the CI: memory safety, parser boundaries, error
-paths, and concurrency. Put bounded fixes from steps 55–58 in PR4; park larger
+paths, and concurrency. Put bounded fixes from steps 55–59 in PR4; park larger
 independent changes with evidence rather than creating step PRs.
 
-## 59 — Kick off and re-time the scheduled workflows `[sonnet or a stronger model]`
+## 60 — Kick off and re-time the scheduled workflows `[sonnet or a stronger model]`
 
 For each scheduled lane applicable at step 19 (`ci-deep.yml` monthly, `bump.yml`
 weekly), verify that the workflow exists and `gh workflow view` reports it active, then
@@ -2141,7 +2173,7 @@ the wall-clock the merged suite actually produces.
 **State the runner cost before starting**: a deep run is long, and on a self-hosted pool
 it occupies slots other work needs.
 
-## 60 — Broaden the dynamic analysis `[sonnet or a stronger model]`
+## 61 — Broaden the dynamic analysis `[sonnet or a stronger model]`
 
 Valgrind memcheck and reachable fuzz targets were ported at their reference shapes and
 verified to fire (steps 41 and 43). Helgrind is included only when step 43 proved shared
@@ -2150,7 +2182,7 @@ concrete reachable gaps with the smallest useful target, corpus case, time-box,
 applicable helgrind path, or memcheck request shape. Accumulate bounded changes in PR4,
 not one PR per surface.
 
-## 61 — Increase coverage `[sonnet or a stronger model]`
+## 62 — Increase coverage `[sonnet or a stronger model]`
 
 Report the current figure and the branches gcovr shows as never taken, then add
 meaningful cases for reachable gaps, each with its negative control. Coverage stays a
@@ -2159,7 +2191,7 @@ report, not a gate (step 30); never chase a number alone.
 If the honest answer is that the remaining uncovered lines are unreachable, say that
 instead of offering.
 
-## 62 — Anything left uncommitted or unpushed `[sonnet or a stronger model]`
+## 63 — Anything left uncommitted or unpushed `[sonnet or a stronger model]`
 
 Check this state and report what you find either way. Fix only this run's residue
 through PR4; never touch owner dirt.
@@ -2187,10 +2219,10 @@ is left untouched; a matching path list alone is insufficient.
 **Acceptance:** each of the two classes reported with its paths, or an explicit
 "nothing outstanding".
 
-## 63 — The superrepo gitlink `[sonnet or a stronger model]`
+## 64 — The superrepo gitlink `[sonnet or a stronger model]`
 
 Check this separately because it is invisible from inside the target, and every check in
-step 62 can pass while the gitlink is wrong.
+step 63 can pass while the gitlink is wrong.
 
 If the target is a myguard submodule, every merged PR needs its bump on the superrepo's
 `master`. A missing one means the superrepo still points at the pre-adoption commit.
@@ -2276,4 +2308,4 @@ divergence with its reason. Remote CI green on the **current head** — re-check
 `headRefOid` before merging. Squash-merge, delete the branch, bump the superrepo
 gitlink. Record the new anchor in `index.md`.
 
-Run the phase-7 aftermath (steps 55–63) after the forward PR or no-op.
+Run the phase-7 aftermath (steps 55–64) after the forward PR or no-op.
