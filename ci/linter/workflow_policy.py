@@ -117,6 +117,15 @@ BINDERS = (
     re.escape("ci/tools/coverage.sh"),
 )
 BINDER_RE = re.compile("|".join(BINDERS))
+# Ways a line NAMES a binder without being one. Reported by the
+# nginx-cache-turbo-module adoption 2026-08-10, where both produced a finding
+# that is false by inspection and left the gate red on arrival -- which is how a
+# checker teaches everyone to --no-verify.
+#
+# `python3 -m py_compile ci/tools/test_runtime.py` checks syntax. It starts no
+# server and binds no port, so a job whose only mention of the driver is that
+# does not owe a port band.
+NON_BINDING_RE = re.compile(r"py_compile")
 # `prove` alone, for the pass-through check below: it is the one binder whose
 # band arrives through an env var (TEST_NGINX_PORT) rather than an argument.
 PROVE_RE = re.compile(r"(?<![\w./-])prove(?![\w./-])")
@@ -303,7 +312,24 @@ def _body(node: dict) -> str:
     to yield ZERO jobs and a cheerful "no runtime-bearing jobs" -- and a port
     mentioned only in a comment no longer counts as a declaration.
     """
-    return yaml.safe_dump(node, default_flow_style=False, sort_keys=False)
+    dumped = yaml.safe_dump(node, default_flow_style=False, sort_keys=False)
+    # Shell comments inside a `run:` block survive the YAML round-trip, so prose
+    # that merely NAMES the driver used to make a job runtime-bearing and demand
+    # a band. Strip comments and non-binding invocations before the substring
+    # questions below are asked.
+    #
+    # Split on ESCAPED newlines as well as real ones. safe_dump folds a
+    # multi-line `run:` into one quoted scalar containing literal "\n", so a
+    # naive per-dumped-line strip cuts at the first '#' and discards every real
+    # command after it -- including the `--port $TEST_BASE_PORT` that proves a
+    # job is wired. That direction fails OPEN, which is the worse one.
+    kept = []
+    for line in re.split(r"\\n|\n", dumped):
+        code = line.split("#", 1)[0]
+        if NON_BINDING_RE.search(code):
+            continue
+        kept.append(code)
+    return "\n".join(kept)
 
 
 def _steps(node: dict) -> list[str]:
@@ -341,7 +367,14 @@ def _order_finding(where: str, node: dict) -> str | None:
     # Index order cannot separate those, so fall back to position within the text.
     if first_bind == verify:
         run = runs[verify]
-        if run.index(BAND_VERIFIER) < BINDER_RE.search(run).start():
+        # Bound to a local so the None case is handled rather than assumed.
+        # first_bind == verify means BINDER_RE already matched this step, so
+        # `bind` cannot be None in practice -- but calling .start() straight off
+        # the search result makes that an invariant mypy cannot see, and a
+        # future edit to BINDER_RE would turn it into an AttributeError inside a
+        # linter: exit 2 "could not run" for what is really a clean step.
+        bind = BINDER_RE.search(run)
+        if bind is None or run.index(BAND_VERIFIER) < bind.start():
             return None
         return (
             f"{where} binds the band earlier in the same step than it runs "
@@ -423,6 +456,20 @@ def check_ports() -> int:
                     "TEST_BASE_PORT" in nginx_port.group(1)
                     or nginx_port.group(1).strip() == port
                 )
+                # TEST_NGINX_RANDOMIZE is the one case where a runtime-bearing
+                # job legitimately does NOT bind its declared band. It is what
+                # makes `prove -jN` safe: Test::Nginx's Util.pm gen_rand_port
+                # picks a port PER PARALLEL JOB and binds only ports it has
+                # proved free, so pinning TEST_NGINX_PORT would re-share the
+                # resource the randomization just separated. The band is still
+                # declared and still swept, which is what reserves the job's
+                # territory on the shared runner.
+                #
+                # Reported by the nginx-cache-turbo-module adoption 2026-08-10;
+                # that repo's prove job randomizes and this one does not, so the
+                # gap was invisible here.
+                if re.search(r"(?m)^\s*TEST_NGINX_RANDOMIZE:", body):
+                    wired = True
                 if not wired:
                     errors.append(
                         f"{where} declares TEST_BASE_PORT but never passes it "

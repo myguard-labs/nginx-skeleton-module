@@ -52,4 +52,12 @@ IGNORE="$ROOT/ci/linter/codespell-ignore.txt"
 args=()
 [ -f "$IGNORE" ] && args+=(--ignore-words "$IGNORE")
 
-codespell "${args[@]}" -- "${FILES[@]}"
+# Normalise codespell's exit status into this suite's 0/1/2 contract. It exits
+# 65 on findings (its own convention); run-all.sh happens to bucket that as
+# "findings", but the hook, lint.yml and a human reading the raw status all see
+# an undocumented value -- and a future codespell using 2 would be reported as
+# "tool missing", masking a real red. Reported by the
+# nginx-cache-turbo-module adoption 2026-08-10.
+rc=0
+codespell "${args[@]}" -- "${FILES[@]}" || rc=1
+exit "$rc"

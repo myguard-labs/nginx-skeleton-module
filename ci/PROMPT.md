@@ -1423,6 +1423,24 @@ the same one.
 - A missing tool exits 2 and BLOCKS. Never a silent skip.
 - Relaxations live in `.yamllint` / `.perlcriticrc` with their reason. Fix
   pre-existing findings or record why — no blanket suppression.
+- **Port the CONFIG files with the checkers that read them.** A checker ported
+  without its config reports findings on arrival that are not bugs — the exact
+  state that trains everyone to `--no-verify`. Measured on
+  `nginx-cache-turbo-module` 2026-08-10: `.yamllint` missing → 22 findings
+  (line-length, comments, document-start, truthy); `.perlcriticrc` missing → 132
+  (four `.pm` policies against 33 Test::Nginx `__DATA__` scripts, none of which
+  is a module); `ci/linter/codespell-ignore.txt` missing → 149 of 151, almost all
+  that module's own domain acronym. The first two ship here; the third ships
+  empty, as the documented seam for the words that are correct in the target.
+- **The installer is retargeted to the TARGET's checker set, not only to the
+  ported scripts.** `--check` must list every tool the finished set needs,
+  including tools the reference has never heard of. Rule 2 makes this concrete:
+  `nginx-cache-turbo-module` gates its staged secret scan on `gitleaks`, which
+  this repo does not use, so the ported `install-linters.sh` neither installed it
+  nor reported it — on a fresh clone or a hosted runner that gate would simply
+  have been absent while `--check` said everything was fine. A tool present but
+  absent from `--check` is invisible to `lint.yml`; a tool the target needs and
+  the installer never heard of is worse.
 - `lint.yml` runs the same `run-all.sh` on a hosted runner, so a clone that never
   enabled the hook still cannot land a regression.
 
@@ -1577,10 +1595,25 @@ tool missing) + the tracked hook. Behind it:
   checker is named in lint.yml LINT_ONLY"), with `c` as the one deliberate
   exclusion. Port the case, not just the current string.
 
+**Every checker states what it selected, and an empty selection is exit 2.**
+This applies to the target's OWN checkers as much as to the ported ones, and it
+is where a rollout loses a gate without noticing. `nginx-cache-turbo-module`'s
+`ci/tools/lint-shm-lock.sh` did `cd "$(dirname "$0")/.."`, correct while it lived
+in `tools/` at the repo root; step 10's move to `ci/tools/` made that land in
+`ci/`, where `src/*.c` matches nothing. Bash leaves an unmatched glob as a
+literal, the `[ -f "$f" ] || continue` guard skips it, and the loop printed
+`ok: invariant holds` having read ZERO files — exit 0, in CI, for weeks. Every
+checker in `ci/linter/` prints a count (`lint-c: 7 file(s)`, `4 runtime job(s)`)
+and that is why none of them could hide this way; the target-native checker
+printed none. So: port the count, and make an empty selection "could not run"
+rather than "clean" — the same rule `run-all.sh` already applies one level up,
+where a `LINT_ONLY` typo exits 2 instead of reporting every linter clean.
+
 **Acceptance:** every checker the target ran before still runs, behind `run-all.sh`;
 the normalized `LINT_ONLY` and checker-script sets match exactly; every added or
 dropped checker has a written reason, and every added one is in
-`skeleton-findings.md`.
+`skeleton-findings.md`; **every checker — ported or target-native — reports the
+size of its selection, and exits 2 rather than 0 when that selection is empty.**
 
 ## 35 — The speed budget `[sonnet or a stronger model]`
 
