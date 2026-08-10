@@ -65,7 +65,24 @@ for f in "${FILES[@]}"; do
         # Angle brackets only: a local "ngx_http_<mod>_*.h" is this module's
         # own header and carries its own ngx_config.h include -- matching it
         # here reported every well-formed file.
-        first_ngx=$(grep -nE '^[[:space:]]*#[[:space:]]*include[[:space:]]*<ngx_' "$f" | head -1 || true)
+        # Either spelling, not just <...>. A module whose .c files open with
+        # #include "ngx_http_<mod>_module.h" satisfies the ordering contract
+        # when THAT header leads with <ngx_config.h> -- looking only at angle
+        # includes reports the first one after it as a violation. Two false
+        # positives on arrival in nginx-cache-turbo-module (2026-08-10), whose
+        # every .c has that shape; this repo's own .c files include
+        # <ngx_config.h> directly, so the gap never showed here.
+        first_ngx=$(grep -nE '^[[:space:]]*#[[:space:]]*include[[:space:]]*[<"]ngx_' "$f" | head -1 || true)
+        case "$first_ngx" in
+          *'"'*)
+            # Leading local ngx_ header: the contract moves to that header.
+            local_h="src/$(printf '%s' "$first_ngx" | sed -E 's/.*"([^"]+)".*/\1/')"
+            if [ -f "$local_h" ] \
+               && grep -nE '^[[:space:]]*#[[:space:]]*include[[:space:]]*<ngx_' "$local_h" \
+                  | head -1 | grep -q 'ngx_config\.h'; then
+                first_ngx=""
+            fi ;;
+        esac
         if [ -n "$first_ngx" ] && ! printf '%s' "$first_ngx" | grep -q 'ngx_config\.h'; then
             printf '  %s:    [include: ngx_config.h must be the first ngx_ include]\n' \
                    "$f:${first_ngx%%:*}"
