@@ -107,10 +107,16 @@ insert_stamp() {
     # RETURN, not EXIT: this runs per file, and an EXIT trap here would replace
     # the one guarding $raw_list.
     trap 'rm -f "$tmp"' RETURN
+    # The placement rules run BEFORE the strip rule. Ordering them the other way
+    # round is a re-stamping bug rather than a style question: on an
+    # already-stamped file the strip matches line 1, `next` skips both NR == 1
+    # rules, `done` stays 0, and END appends the new stamp at EOF -- so a file
+    # stamps correctly the first time and drifts to the bottom on every edit
+    # after that. Seen on codeql.yml (line 90) and lint.yml (line 70).
     awk -v sha="$sha" '
-        /^# sync-sha: / { next }
         NR == 1 && /^#!/ { print; print "# sync-sha: " sha; done = 1; next }
-        NR == 1 && !done { print "# sync-sha: " sha; done = 1 }
+        NR == 1 { print "# sync-sha: " sha; done = 1 }
+        /^# sync-sha: / { next }
         { print }
         END { if (!done) print "# sync-sha: " sha }
     ' "$f" > "$tmp"

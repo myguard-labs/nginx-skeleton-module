@@ -963,13 +963,43 @@ Skipping this proof is how a member ends up called by nobody: `ci.yml` reference
 job name that does not exist, the call contributes nothing, and the suite looks green
 because the check that would have failed never ran.
 
-**Acceptance:** the run list showing every member twice, pasted in the PR body. A
-member that ran once was never called — fix `ci.yml` and re-run. **Step 18 does not
-begin until this evidence exists.**
+**One member can be unable to double-run, and it is not a `ci.yml` bug.** A called
+workflow inherits the caller's `github.workflow`, so a member whose `concurrency:`
+group interpolates it gets two distinct group strings and both runs survive. A
+member whose group omits it — `codeql-${{ github.ref }}` rather than
+`codeql-${{ github.workflow }}-${{ github.ref }}` — hashes both runs to the same
+string, and the called run cancels the standalone one. That member shows one run
+and a `cancelled` sibling no matter how correct the call graph is.
 
-## 18 — Remove `pull_request:` from every member `[sonnet or a stronger model]`
+Check the group before concluding the call is broken:
+
+```sh
+grep -A2 '^concurrency:' .github/workflows/*.yml | grep 'group:'
+```
+
+A member missing `github.workflow` gets it added, in this step, and then
+double-runs like the rest. Where that cannot be changed, the reachability fact
+step 18 actually needs is the called job appearing in the orchestrator run's job
+list with a real conclusion — record that and the group string instead.
+
+**Acceptance:** the run list showing every member twice, pasted in the PR body. A
+member that ran once was never called — fix `ci.yml` and re-run, unless its
+concurrency group is the cause above, in which case fix the group. **Step 18 does
+not begin until this evidence exists.**
+
+## 18 — Remove `pull_request:` and `push:` from every member `[sonnet or a stronger model]`
 
 One commit. Now each member runs once.
+
+**Both triggers go, not just `pull_request:`.** A member that keeps `push:` runs
+again on the merge commit, against a tree identical to the PR head that already
+passed. The two runs get different concurrency keys, so `cancel-in-progress`
+cannot collapse them, and both are green — the only symptoms are the bill and a
+README that no longer describes what runs when. This is the same rule step 33's
+`check_cadence()` enforces; it is stated here because this is the step that makes
+the edit, and an Acceptance that greps only for `pull_request:` passes a tree
+where every member still carries `push:`. Measured on
+`nginx-cache-turbo-module` 2026-08-10: all six members carried both.
 
 **This is the point of no return**, and the only action in the job that can leave
 the repo with *no* PR gate at all. Do not take it until step 17 showed **every**
@@ -989,9 +1019,15 @@ A second entry point that is not `pull_request:` (a `schedule:`, a
 `workflow_dispatch:`) is fine and normal — `bump.yml` and `ci-deep.yml` in the
 reference are schedule-driven and not members of the PR lane.
 
-**Acceptance:** exactly one workflow carrying `pull_request:`, proved by
-`grep -lE '^\s*pull_request:' .github/workflows/*.yml`, and a PR run in which every
-member ran exactly once.
+**Acceptance:** exactly one workflow carrying `pull_request:` **and no member
+carrying `push:`**, proved by
+
+```sh
+grep -lE '^\s*pull_request:' .github/workflows/*.yml   # -> ci.yml alone
+grep -lE '^\s*push:' .github/workflows/*.yml           # -> empty
+```
+
+and a PR run in which every member ran exactly once.
 
 ## 19 — Port the workflow set `[sonnet or a stronger model]`
 
