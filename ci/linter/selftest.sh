@@ -148,6 +148,12 @@ policy_ 1 verify-after-bind ports
 # band left this check green.
 policy_ 1 prove-only-binder-exempt ports
 
+# The other half of the same defect: a prove job may declare a unique band,
+# satisfy every check above, and still bind 1984, because Test::Nginx reads
+# TEST_NGINX_PORT and has never heard of TEST_BASE_PORT. The driver's
+# pass-through guard is keyed on starts_runtime, so it never covered `prove`.
+policy_ 1 prove-band-not-passed-through ports
+
 # A workflow_call member carrying its own `push:` runs twice per change and BOTH
 # runs are green, so nothing else in the toolchain notices. Every member here is
 # correct today, but only a per-file comment says so, and a comment does not
