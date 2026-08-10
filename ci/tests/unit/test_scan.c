@@ -299,9 +299,19 @@ case_split_invariance(void)
  * So what is asserted here is what IS observable and IS load-bearing today:
  * the piece must HOLD an open escape rather than decide it (deciding it early
  * is the H2 bug -- decoding from the wrong escape state), and final() must
- * CLEAR the hold. A stale hold is not cosmetic: the state struct is reused
- * across streams in the module's body handler, so bytes held from one request
- * would be prepended to the next one's first piece.
+ * CLEAR the hold.
+ *
+ * Why clearing matters, stated precisely -- an earlier version of this comment
+ * claimed the module reuses one state struct across streams, and it does not:
+ * ngx_http_skel_scan_body() declares `st` as a stack local and ngx_memzero()s
+ * it per call (module.c), so today no request can inherit another's hold. The
+ * assertion guards the CONTRACT, not a live bug: the header documents `st` as
+ * caller-owned and reusable after final(), and a derived module that hoists it
+ * to a request ctx or a long-lived struct -- the natural move when a scan spans
+ * several body handlers -- gets that reuse for free. A final() that left
+ * hold_len set would then prepend one stream's held bytes to the next one's
+ * first piece. Keep the assertion; it is what makes the documented contract
+ * true rather than aspirational.
  */
 static void
 case_stream_hold_and_flush(void)
