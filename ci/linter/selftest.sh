@@ -220,7 +220,7 @@ policy_ 1 schedule-only-runner-labels runners
 # The -ok fixture is checked through a TEMPORARY COPY whose selector is
 # regenerated from TRUST_SPLITS, rather than against the tracked file's
 # hardcoded copy of this repo's pool. An adopter that narrows TRUST_SPLITS to
-# its own labels -- which steps 13/14 tell it to do -- otherwise sees this
+# its own labels -- which step 13 tells it to do -- otherwise sees this
 # POSITIVE control fail against a selector the fixture still spells the
 # skeleton's way: correct behaviour, confusing symptom, and it cost the
 # nginx-cache-turbo-module adoption a debugging detour on 2026-08-10.

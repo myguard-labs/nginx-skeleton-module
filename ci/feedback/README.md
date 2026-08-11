@@ -1,7 +1,7 @@
 # Adoption feedback
 
 Findings sent back here by modules that adopted this skeleton — the half of
-[step 49](../PROMPT.md) that could not be fixed in code.
+[step 33](../PROMPT.md) that could not be fixed in code.
 
 The skeleton is only worth keeping if it stays ahead of its clones, and an
 adopter is the only party who ever runs it against an unfamiliar module. What

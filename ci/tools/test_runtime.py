@@ -64,7 +64,7 @@ request split into packets. A ci/t/ port of the every-interior-byte split
 therefore sent one giant request, matched the first status line, and passed
 green against the `keep = 0` mutation above. `--- pipelined_requests` shares one
 connection, so it cannot carry per-case `Connection: close` either. The cases
-below stay here. See ci/PROMPT.md step 25.
+below stay here. See ci/PROMPT.md step 22.
 
 Exit: 0 all cases passed, 1 a case failed, 2 the fixture could not start.
 """
