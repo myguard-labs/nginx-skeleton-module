@@ -76,7 +76,8 @@ ci/                        everything that only exists to test/build the module
     selftest.sh            negative controls for the gate itself
     fixtures/policy/       trees the policy checks must go RED on
   PROMPT.md                     adopt this standard in another module:
-                                63 steps in seven phases
+                                42 steps in eight phases (read one phase at a
+                                time: ci/tools/prompt-section.sh <phase>)
 .githooks/pre-commit       tracked commit gate (opt in: core.hooksPath)
 .github/
   versions.env             version + sha256 pins, single source of truth
@@ -297,17 +298,25 @@ Read /opt/myguard/labs/nginx-skeleton-module/ci/PROMPT.md and apply it to
 /path/to/nginx-<name>-module.
 ```
 
-63 flat-numbered steps in seven phases cover inventory, the decision seam, the
-`ci/` layout, runner identity, workflows, badges, one PR entry point, test
-layers, fuzzing, caching, linting, lanes, and proof that each green gate bites.
-A step is a **unit of work, never a PR boundary**: the whole job lands through
-**four target PRs** (7–22, 23–38, 39–54, 55–63) plus one feedback PR against this
-repo. Sonnet or a stronger model works one step at a time on the current PR's
-shared branch. Two hard barriers sit inside the first PR — runner identity
-(13–15) completes before any workflow is ported, and step 17's double-run proof
-completes before step 18 removes the last `pull_request:` trigger. Every run
-starts at step 1, including a partial earlier adoption, and the mandatory
-aftermath runs after migration, forwarding, or a no-op.
+42 flat-numbered steps in eight phases cover inventory, the linter toolchain, the
+decision seam, the `ci/` layout, runner identity, long-runner demotion, workflows,
+badges, one PR entry point, test layers, fuzzing, caching, lanes, and proof that
+each green gate bites. A step is a **unit of work, never a PR boundary**: the
+whole job lands through **three target PRs** (6–16, 17–29, 30–42) plus one
+feedback PR against this repo. Sonnet or a stronger model works one step at a time
+on the current PR's shared branch. Two hard barriers sit inside the first PR —
+runner identity (step 13) completes before the long-runner demotion, and step 15's
+double-run proof completes before step 16 removes the last `pull_request:`
+trigger. Every run starts at **phase 0**, which reads the target's `ci/.adopted`
+stamp and routes to a full migration, a narrow re-alignment against a changed
+prompt, or the drift probes alone — so a module that already adopted does not
+re-run 42 steps. The mandatory aftermath runs after migration, forwarding, or a
+no-op.
+
+**Read one phase, not the file.** `ci/PROMPT.md` is ~2100 lines; a worker loads
+the front matter plus its own phase via `ci/tools/prompt-section.sh <phase>`,
+roughly a quarter of the whole. `--list` shows the phases, `--hash` computes the
+`prompt_version` that phase 0 compares against.
 
 It is a **merge into whatever CI the target already has**, not a greenfield
 install — the target's tests, thresholds and extra gates survive; the layout,
@@ -315,7 +324,7 @@ ordering, naming and entry points become the standard's. A final section covers
 the inverse job once a module is fully adopted: forwarding one later skeleton
 change into it.
 
-**Settle the runner question first** (steps 13–15 of the prompt). These
+**Settle the runner question first** (step 13 of the prompt). These
 workflows name `builder02`, a machine myguard owns, in 15 `runs-on` selectors
 plus `.github/actionlint.yaml` and `TRUST_SPLITS` in `workflow_policy.py` — and
 **no linter in this repo will tell an adopter they copied it**: actionlint

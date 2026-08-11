@@ -5,7 +5,7 @@ WHY THIS EXISTS
     ci/linter/fixtures/policy/schedule-only-runner-labels-ok/ is the POSITIVE
     control for the runner-label check: same shape as the typo fixture, but a
     selector `workflow_policy.py` must accept. Hardcoding this repo's pool in it
-    makes that control wrong for every adopter, because steps 13-14 of
+    makes that control wrong for every adopter, because step 13 of
     ci/PROMPT.md tell an adopter to narrow TRUST_SPLITS to labels it actually
     owns. The fixture then asserts a selector the adopter deliberately rejects,
     the control fails, and the failure looks like a bug in the checker rather
