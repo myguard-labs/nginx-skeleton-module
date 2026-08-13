@@ -28,8 +28,11 @@ that never picks up a runner, on a weekly schedule nobody is watching.
 
 Why an inlined pool rather than the mistyped `buidler02` this fixture used to
 carry: since 2026-08-13 the pool label lives in the `POOL` repo variable and
-appears nowhere in the tree, so a label typo is no longer expressible here — a
-bad value in the GitHub UI fails at `fromJSON` parse or falls back to hosted.
+appears nowhere in the tree, so a label typo is no longer expressible *here*.
+It is still expressible in the GitHub UI, and it fails the same way it always
+did: `["self-hosted","buidler02","lxc"]` is valid JSON and non-empty, so it
+parses, skips the fallback, and queues against a label nobody answers. No
+linter in this repo can see the variable's value.
 What remains spellable, and what this now encodes, is a selector that has
 drifted from the approved form: an inlined label set, a resurrected fork
 ternary, a hand-edited fallback. That drift fails the same way the typo did.

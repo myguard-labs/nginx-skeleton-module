@@ -76,9 +76,15 @@ class PolicyError(Exception):
 # mistyped label was a job that queued forever, which is why this check existed.
 #
 # Both concerns moved, deliberately (2026-08-13):
-#   - The pool label is now ONE value in the GitHub UI. A typo there fails at
-#     `fromJSON` parse or falls back to hosted -- visible immediately, not a
-#     silent queue. There is nothing left in the tree to spell wrong.
+#   - The pool label is now ONE value in the GitHub UI, so there is nothing left
+#     in the tree to spell wrong and 15 copies cannot disagree. The typo did not
+#     become impossible, though, only single-sited: `POOL` set to
+#     `["self-hosted","buidler02","lxc"]` is valid JSON and non-empty, so
+#     `fromJSON` parses it and the `||` fallback never fires. That job queues
+#     against a label nobody answers, exactly as before. Only a MALFORMED value
+#     fails loudly (fromJSON parse error) and only an UNSET one falls back to
+#     hosted. Nothing in this repo can check the variable's contents; that is
+#     the residual risk of moving it out of the tree.
 #   - Fork trust is now GitHub's `all_external_contributors` approval policy:
 #     every fork PR needs an explicit approval before any job runs. Verified
 #     set on this repo 2026-08-13.
