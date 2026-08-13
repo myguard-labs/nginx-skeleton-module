@@ -65,7 +65,7 @@ PY_MODULES=(
 # bare `pip3 install` fails on Debian 12+ and `--break-system-packages` is a
 # worse answer than an isolated venv per tool.
 PIPX_TOOLS=(
-    "ruff:ruff==0.16.1"                # Python lint + format check, pinned:
+    "ruff:ruff==0.16.2"                # Python lint + format check, pinned:
                                       # an unpinned ruff changes findings under
                                       # you and local stops matching CI, same
                                       # reasoning as the semgrep pin below.
@@ -74,7 +74,7 @@ PIPX_TOOLS=(
                                       # frozen security scanner stops finding
                                       # what it was added for. A new rule going
                                       # red is a finding to triage, not drift.
-    "semgrep:semgrep==1.169.0"        # C, pinned to the CI version on purpose:
+    "semgrep:semgrep==1.172.0"        # C, pinned to the CI version on purpose:
                                       # an unpinned semgrep changes findings
                                       # under you and local stops matching CI.
     "codespell:codespell"             # ci/linter/lint-spelling.sh. Unpinned: the
@@ -147,11 +147,32 @@ fi
 
 step "pipx"
 have pipx || $SUDO apt-get install -y --no-install-recommends pipx || rc=1
+# A pinned spec (tool==version) must end up at THAT version, so presence of the
+# binary is not enough to skip the install: `have semgrep` is true for any
+# version, including the one the pin was just bumped away from. Compare the
+# installed version against the pin and reinstall when it differs.
+#
+# --force is required on the reinstall path. A bare `pipx install` against an
+# existing venv prints "already seems to be installed", keeps the old version
+# and exits 0 -- so the previous `pipx install || pipx install --force` fallback
+# could never fire, and the pin silently never moved.
 for e in "${PIPX_TOOLS[@]}"; do
     tool="${e%%:*}"; spec="${e#*:}"
+    want="" ; case "$spec" in *==*) want="${spec##*==}" ;; esac
+    need=0
     if [ "$FORCE" -eq 1 ] || ! have "$tool"; then
+        need=1
+    elif [ -n "$want" ]; then
+        # Unpinned tools (zizmor) have no target version to compare against and
+        # are intentionally left at whatever is installed.
+        got="$("$tool" --version 2>/dev/null | head -1)"
+        # --version output varies (bare "1.2.3" vs "tool 1.2.3"); match the
+        # version as a whole word rather than assuming a format.
+        case " $got " in *" $want "*) ;; *) need=1 ;; esac
+    fi
+    if [ "$need" -eq 1 ]; then
         echo "installing: $spec"
-        pipx install "$spec" || pipx install --force "$spec" || rc=1
+        pipx install --force "$spec" || rc=1
     fi
 done
 

@@ -1,4 +1,4 @@
-# sync-sha: 0fc6e1330f957cc69318971426272bd2bef0657f907cf41d23919b6b262d1902
+# sync-sha: 1b9356f02169abed418a128c55b737636244a09130cfec3267c2a924b85456e1
 name: CodeQL
 
 # CodeQL on the module TU only.
@@ -15,9 +15,9 @@ name: CodeQL
 # and the hosted image already ships the CodeQL bundle.
 #
 # Action pins:
-# actions/checkout@v5      -> 93cb6efe18208431cddfb8368fd83d5badbf9bfd
-# actions/cache@v4         -> 0057852bfaa89a56745cba8c7296529d2fc39830
-# github/codeql-action@v4  -> 8aad20d150bbac5944a9f9d289da16a4b0d87c1e
+# actions/checkout@v5.1.0      -> fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+# actions/cache@v4.3.0         -> 0057852bfaa89a56745cba8c7296529d2fc39830
+# github/codeql-action@v4.37.7  -> ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -49,7 +49,7 @@ jobs:
       security-events: write   # required to upload the SARIF results
     steps:
       - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
@@ -63,7 +63,7 @@ jobs:
             build-essential curl libpcre2-dev zlib1g-dev
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
+        uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           languages: c-cpp
           queries: security-extended
@@ -85,6 +85,6 @@ jobs:
         run: NO_CACHE=1 bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" module
 
       - name: Analyze
-        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
+        uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
         with:
           category: /language:c-cpp
