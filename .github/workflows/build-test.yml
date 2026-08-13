@@ -1,4 +1,4 @@
-# sync-sha: 1adb4d01bea3cae2c914befae1c359899696e03ce29d5d115d257be2f514a7c0
+# sync-sha: e0c9b78132f520663f8785bc591c978c4c752fb1e6810d57d8f1dd2ae4d4340b
 name: Build&Test
 
 # The PR gate: everything here must be green to merge. Fast enough to run on
@@ -88,10 +88,11 @@ jobs:
           ( cd /tmp && grep " ${tarball}\$" actionlint.checksums \
               | sed 's#'"${tarball}"'#actionlint.tgz#' | sha256sum -c - )
           tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
-          # -config-file explicitly: auto-discovery of .github/actionlint.yaml is
-          # not reliable across checkout layouts, and without the config every
-          # self-hosted runner label is flagged as unknown --
-          # which is how this lint step becomes noise everyone ignores.
+          # No -config-file: since the pool moved to the `POOL` repo variable
+          # there are no literal runner labels left to declare, and
+          # .github/actionlint.yaml was removed with them. Passing the flag for
+          # an absent file is exit 3 ("could not read config file"), not a
+          # skip -- a hard failure that has nothing to do with the workflows.
           # Both extensions: GitHub runs *.yaml workflows too, and a glob of
           # *.yml alone left one unlinted -- the same blind spot the policy
           # linters had. nullglob so an absent extension expands to nothing
@@ -99,7 +100,7 @@ jobs:
           shopt -s nullglob
           files=(.github/workflows/*.yml .github/workflows/*.yaml)
           [ "${#files[@]}" -gt 0 ] || { echo "no workflows found" >&2; exit 1; }
-          /tmp/actionlint -color -config-file .github/actionlint.yaml \
+          /tmp/actionlint -color \
             "${files[@]}"
 
   build:
