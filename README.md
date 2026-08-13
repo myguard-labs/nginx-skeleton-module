@@ -324,13 +324,14 @@ ordering, naming and entry points become the standard's. A final section covers
 the inverse job once a module is fully adopted: forwarding one later skeleton
 change into it.
 
-**Settle the runner question first** (step 13 of the prompt). These
-workflows name `builder02`, a machine myguard owns, in 15 `runs-on` selectors
-plus `.github/actionlint.yaml` and `TRUST_SPLITS` in `workflow_policy.py` — and
-**no linter in this repo will tell an adopter they copied it**: actionlint
-validates labels for a literal `runs-on` only, and every selector here is a
-`fromJSON(...)` ternary it stays silent on. If you do not own the pool, every
-job is `ubuntu-latest` and the fork ternary is deleted.
+**Settle the runner question first** (step 13 of the prompt). No machine
+myguard owns is named anywhere in these workflows: every `runs-on` reads the
+`POOL` repo variable, falling back to `ubuntu-latest` when it is unset. An
+adopter that owns no self-hosted pool therefore needs no workflow edit at all —
+leave `POOL` unset and every job runs GitHub-hosted. An adopter that does owns
+one sets `POOL` to its own label set in the repo's Actions variables, and turns
+`SELF_HOSTED_ALLOWED` on in `workflow_policy.py` so the runner check accepts the
+self-hosted selector.
 
 Everything else — the drift classes, the probe shapes, anchor resolution, what
 to record in the target's memory mirror — is in

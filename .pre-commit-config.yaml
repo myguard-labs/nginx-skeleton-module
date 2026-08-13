@@ -207,6 +207,7 @@ repos:
         files: '^src/.*\.[ch]$'
         pass_filenames: true
 
+
       # Python is the runtime TEST HARNESS in these repos, so it carries the
       # same weight as C -- but nothing linted it before this hook.
       #
@@ -263,11 +264,6 @@ repos:
       # CI workflows are code that breaks silently; actionlint catches bad if:
       # expressions, unknown contexts and shell errors inside run: blocks.
       #
-      # -config-file: declares this repo's self-hosted runner labels explicitly
-      # rather than relying on actionlint finding .github/actionlint.yaml by
-      # cwd-guessing -- pre-commit hooks do not guarantee cwd the way a bare
-      # `actionlint` invocation from a shell does.
-      #
       # SHELLCHECK_OPTS applies to the shellcheck actionlint runs over `run:`
       # blocks. Without it that embedded pass reports at INFO while the
       # standalone shellcheck hook below gates at warning -- so the same SC2086
@@ -275,7 +271,7 @@ repos:
       # in both places.
       - id: actionlint
         name: actionlint (workflow syntax)
-        entry: env SHELLCHECK_OPTS=-Swarning actionlint -config-file .github/actionlint.yaml
+        entry: env SHELLCHECK_OPTS=-Swarning actionlint
         language: system
         files: ^\.github/workflows/.*\.ya?ml$
         pass_filenames: true

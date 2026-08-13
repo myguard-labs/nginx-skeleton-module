@@ -1,4 +1,4 @@
-# sync-sha: fb924a952bbc994c97bb37c280c493fe3c636788425a464a98a96bcebb1c3fae
+# sync-sha: 23d2969e1135940ef95a7e98f918176654f40f795b202a5829467189d6b51c92
 name: CI Deep
 
 # Exhaustive dynamic analysis. Monthly cron + on-demand ONLY -- never on a PR.
@@ -55,7 +55,7 @@ jobs:
     # matrix.label, not the version: the job name is evaluated before any step
     # runs, so the resolved version is not available here.
     name: Build & Test::Nginx (${{ matrix.flavor }} ${{ matrix.label }})
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 30
     env:
       # This job's band, disjoint from build-test.yml's 19200/19300 and the
@@ -175,7 +175,7 @@ jobs:
 
   fuzz:
     name: Fuzz (scan core, long)
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 600
     steps:
       - name: Checkout module
@@ -296,7 +296,7 @@ jobs:
 
   memcheck:
     name: Valgrind Memcheck soak
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 240
     steps:
       - name: Checkout module
@@ -331,7 +331,7 @@ jobs:
 
   helgrind:
     name: Valgrind Helgrind soak
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 240
     steps:
       - name: Checkout module
@@ -378,7 +378,7 @@ jobs:
   # suite run -- minutes against a lane budget measured in seconds.
   coverage:
     name: Coverage report
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 60
     env:
       # This job's port band, disjoint from build-test.yml's 19200. It runs
