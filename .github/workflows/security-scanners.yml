@@ -1,4 +1,4 @@
-# sync-sha: 28c424efc9f8f496d31b220b8c09d954019951bf8aff6d6aaa416fe4f19671be
+# sync-sha: ffb5447d77333ad9fce77d98b0009f1bcb3c110023a7e3880d442ae86fc20bde
 name: Security scanners
 
 # Static analysis gate on every PR/push: flawfinder (blocking at >=4),
@@ -71,13 +71,31 @@ jobs:
           # chain (bump deliberately, same as the nginx pins). Unpinned = a
           # compromised/regressed release runs here silently on the next PR.
           SEMGREP_PIN="semgrep==1.172.0"
+          SEMGREP_WANT="1.172.0"
           if command -v pipx >/dev/null; then
-            pipx install --quiet "$SEMGREP_PIN"
+            # --force is load-bearing on the self-hosted runner: pipx keeps its
+            # venvs between jobs, and a bare `pipx install` against an existing
+            # semgrep venv prints "already seems to be installed", leaves the
+            # OLD version in place and still exits 0. The pin bump above would
+            # then be cosmetic -- the previous release keeps scanning every PR,
+            # which is precisely the silent supply-chain drift the pin exists to
+            # prevent. Hosted runners start clean, so this only matters here.
+            pipx install --force --quiet "$SEMGREP_PIN"
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/bin:$PATH"
           else
             pip3 install --quiet --user --break-system-packages "$SEMGREP_PIN"
             echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/bin:$PATH"
           fi
+          # Assert the pin actually took. Without this the job cannot tell a
+          # successful bump from a silently-skipped one: both are exit 0.
+          got="$(semgrep --version 2>/dev/null | head -1)"
+          if [ "$got" != "$SEMGREP_WANT" ]; then
+            echo "semgrep pin did not apply: want $SEMGREP_WANT, got '${got:-<none>}'" >&2
+            exit 1
+          fi
+          echo "semgrep $got (pinned)"
 
       # clang-tidy needs ngx_auto_config.h, which only exists after configure.
       # Reuse ci-build.sh so this analyzes against the same pinned nginx the
