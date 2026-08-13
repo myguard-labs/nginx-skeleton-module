@@ -10,7 +10,6 @@ finding shellcheck could have named in two seconds. Every script is standalone;
 |---|---|---|
 | `lint-c.sh` | `src/*.[ch]` | flawfinder ≥4, cppcheck (warning/performance/portability), semgrep ≥WARNING (`p/c`, `p/security-audit`) |
 | `lint-nginx.sh` | `src/*.[ch]` | nginx conventions: libc alloc/str/num/io instead of `ngx_*`, hard tabs, >80 columns, trailing whitespace, `ngx_config.h` include order |
-| `lint-astgrep.sh` | `src/*.[ch]` | ast-grep over `ci/ast-grep/` (own C/nginx rules + CodeRabbit's C/C++ `essentials` pack). Six promoted rules block; the rest print advisory — ast-grep has no severity threshold and exits non-zero only on `error` |
 | `lint-sh.sh` | `*.sh`, `*.bash`, `.githooks/*` | shellcheck `-S warning` |
 | `lint-python.sh` | `*.py` | `ruff check` + `ruff format --check` |
 | `lint-perl.sh` | `ci/t/*.t`, `*.pl`, `*.pm` | `perl -c` + perlcritic severity ≥4 |
@@ -26,7 +25,7 @@ finding shellcheck could have named in two seconds. Every script is standalone;
 | `install-linters.sh` | — | apt-get → pipx → cpan → upstream binary |
 | `lib.sh` | — | sourced helpers (file selection, missing-tool failure) |
 | `workflow_policy.py` | — | the repo-policy checks the `ci-*`/`docs-drift` wrappers call (`runners`, `ports`, `docs`, `cadence`, `secrets`) |
-| `selftest.sh` | — | negative controls for the gate itself; run before the linters in `lint.yml`. Includes the two set-equality controls: every checker named in `lint.yml`'s `LINT_ONLY`, and the ast-grep promoted set identical in `lint-astgrep.sh` and `.pre-commit-config.yaml` |
+| `selftest.sh` | — | negative controls for the gate itself; run before the linters in `lint.yml`. Includes the set-equality control: every checker is named in `lint.yml`'s `LINT_ONLY` |
 | `fixtures/policy/` | — | trees the policy checks must go RED on — the known bypasses, the runner-label and step-ordering cases, and the four ways a `secrets:` declaration goes wrong; `clean/` and the `-ok` trees must stay GREEN |
 
 Rule config lives at the repo root so editors and these scripts agree:

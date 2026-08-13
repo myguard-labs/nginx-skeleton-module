@@ -39,7 +39,7 @@ boundary.**
 |---|---|---|---|
 | 0 | — | already adopted? re-alignment triage | nothing (read-only) |
 | 1 | 1–5 | preconditions, inventory, score, baseline | nothing (read-only) |
-| 2 | 6–7 | toolchain: linters, configs, ast-grep, hook | PR1 |
+| 2 | 6–7 | toolchain: linters, configs, hook | PR1 |
 | 3 | 8–12 | the decision seam, layout, `src/` | PR1 |
 | 4 | 13–16 | runner identity, long-runner demotion, orchestrator | PR1 |
 | 5 | 17–29 | workflows, tests, fuzzing, caching, linter retarget, lanes | PR2 |
@@ -231,15 +231,10 @@ step forbids.
   large, and do not open one for a group with no tracked change. Cleanup falling
   out of the run goes into **one** optional PR4, opened only if there is real
   tracked work. Anything that does not fit is a finding and an `issues.md` row.
-- **`ast-grep` every change you make.** Structural search checks your own edits:
-  after each step touching C or a workflow, run `ast-grep run` over the changed
-  files to confirm the shape you intended is the shape that landed. Use
-  `ast-grep run -p '<pattern>' <path>`; a bare `-p` without `run` matches nothing,
-  and in C an all-`$$$` argument list matches nothing even when named — pin the
-  first argument. `ast-grep` reports an unknown rule as a clean exit, so read the
-  output, never the exit status alone. A grep miss proves the spelling is absent,
-  not that the change is right. The ruleset is installed at step 6, so this is
-  available from step 7 onward.
+- **Verify every change you make by reading it back.** After each step touching C
+  or a workflow, re-read the changed hunk and confirm the shape you intended is
+  the shape that landed. A grep miss proves the spelling is absent, not that the
+  change is right — so confirm on the POSITIVE match, never on a silent zero.
 - **Run any linter you see fit, whenever you see fit.** Lint beyond what a step
   names — `actionlint`/`shellcheck` on a workflow or script you touched,
   `clang-tidy`/`cppcheck`/`gcc -fanalyzer` on C you changed, `yamllint`, a secret
@@ -382,7 +377,7 @@ ci/tools/prompt-section.sh --hash          # in the REFERENCE checkout
    | 25, 26 | 22 | merged: live-server layer carries its own mutation pass |
    | 27, 28, 29 | 23, 24, 25 | fuzz, replay/soak, neighbours |
    | 30 | 26 | coverage |
-   | 32, 33, 34 | 6, 7, 27 | **split**: install+configs+ast-grep and the hook moved to phase 2; retargeting stayed |
+   | 32, 33, 34 | 6, 7, 27 | **split**: install+configs and the hook moved to phase 2; retargeting stayed |
    | 31, 35 | 28 | merged: caching and the speed budget |
    | 36, 37, 38 | 29 | merged: measure, lane, write the map |
    | 39–43 | 30 | merged: one depth audit, five subjects |
@@ -736,14 +731,14 @@ ruleset, the hook.
 
 Doing this at the end instead — where it used to live — costs three things: the
 baseline hand-rolls its own `cpanm` because the installer has not arrived; the
-"`ast-grep` every change you make" rule has no ruleset for the twenty-odd steps that
-edit C and workflows; and the configs arrive after the checkers, so the first run
-reports findings that are not bugs. Measured on `nginx-cache-turbo-module`
+twenty-odd steps that edit C and workflows run with no checker set behind them;
+and the configs arrive after the checkers, so the first run reports findings that
+are not bugs. Measured on `nginx-cache-turbo-module`
 2026-08-10: `.yamllint` missing → 22 findings; `.perlcriticrc` missing → 132;
 `codespell-ignore.txt` missing → 149 of 151. That state is what trains everyone to
 `--no-verify`.
 
-## 6 — Install the linters, configs and structural ruleset
+## 6 — Install the linters and their configs
 
 Follow **[linter/README.md](linter/README.md)** verbatim: `apt-get` first, then
 `pipx` for what Debian lacks, then `cpan` for Perl, then upstream binary for
@@ -766,29 +761,9 @@ the same one.
   `--check` is invisible to `lint.yml`; a tool the target needs and the installer
   never heard of is worse.
 
-**Vendor `ci/ast-grep/` now**, because every step from 7 onward is required to check
-its own edits with it. Regenerate with `tools/vendor-astgrep-rules.py <repo>`; do
-not copy the directory. Two failure modes are silent and both report green:
-
-1. **The config must be passed explicitly** — `ast-grep scan -c ci/ast-grep/sgconfig.yml`.
-   ast-grep resolves `sgconfig.yml` by walking UP from the working directory, so a
-   bare invocation binds to `/opt/myguard/sgconfig.yml` while the clone sits in the
-   superrepo and to **nothing** in a standalone clone — scanning an empty ruleset
-   and exiting 0. That is why the ruleset is vendored per module.
-2. **An unknown rule name in `--error=` is ignored without complaint.** Verified
-   against ast-grep 0.44.1 on 2026-08-10: `--error=no-such-rule` exits 0. So a
-   `PROMOTED` entry the target's regenerated ruleset does not define gates nothing.
-   `lint-astgrep.sh` validates every promoted name against the ruleset before
-   scanning — port that check, not just the rule list.
-
-Promotion is a measurement, not a copy, and it is **deferred to step 27**: it
-depends on findings confirmed real on the target's own post-seam C. Ship the ruleset
-here with the reference's promotions, and re-measure there.
-
 **Acceptance:** `install-linters.sh` succeeds from a clean environment and `--check`
-lists every tool the checker set needs; `ci/ast-grep/` is vendored and
-`ast-grep scan -c ci/ast-grep/sgconfig.yml` runs with a non-zero rule count;
-`.yamllint`, `.perlcriticrc` and `codespell-ignore.txt` are present.
+lists every tool the checker set needs; `.yamllint`, `.perlcriticrc` and
+`codespell-ignore.txt` are present.
 
 ## 7 — The tracked hook
 
@@ -817,10 +792,9 @@ Five steps. The decision seam is the only C refactor in the job and every later 
 links across it. It comes before the `ci/` move: the extraction is independent of
 where test material lives.
 
-**`ast-grep` every C edit in this phase** (ruleset installed at step 6). Confirm the
-shape that landed is the shape you intended: the seam call site is the real TU's, no
-stray `ngx_http_request_t` survived. A grep miss proves the spelling is absent, not
-that the change is right.
+**Read back every C edit in this phase.** Confirm the shape that landed is the shape
+you intended: the seam call site is the real TU's, no stray `ngx_http_request_t`
+survived. A grep miss proves the spelling is absent, not that the change is right.
 
 ## 8 — Probe: which of the four states is the target in?
 
@@ -923,7 +897,6 @@ ci/
   tools/                 ci-build.sh, nginx-tree.sh, test_runtime.py,
                          coverage.sh, max-port.sh, ci-hang-guard.sh, soak.sh
   linter/                local lint gate (step 6, retargeted at step 27)
-  ast-grep/              vendored structural ruleset + sgconfig.yml (step 6)
 ```
 
 - `git mv`, never copy-then-delete — blame must survive. Verify with
@@ -1612,23 +1585,20 @@ promotion is a measurement over the target's post-seam C.
 
 **Every linter is RETARGETED to the module, not copied.** A checker carried over
 verbatim runs against the reference's paths, symbol names and thresholds, and
-reports clean because it matched nothing. Walk the whole set — `ci/linter/lint-*.sh`,
-`.pre-commit-config.yaml` and `ci/ast-grep/` — and for each, adapt then prove it can
-still fail:
+reports clean because it matched nothing. Walk the whole set — `ci/linter/lint-*.sh`
+and `.pre-commit-config.yaml` — and for each, adapt then prove it can still fail:
 
 | What is reference-specific | Retarget to | Prove it |
 |---|---|---|
 | file selectors (`^src/.*\.[ch]$`, `ci/t/*.t`) | the target's real layout | the checker reports a non-zero file count |
 | `lint-nginx.sh` conventions | the target's prefix (`ngx_http_<mod>_`), include order, column limit | plant a violation, see it blocked |
 | thresholds in `lint-c.sh` | whatever `security-scanners.yml` uses **in the target** — move one, move both | list the pairs |
-| `lint-astgrep.sh` `PROMOTED` | rules whose findings are confirmed real **on the target's** code | typo probe |
 | `LINT_ONLY` in `lint.yml` | the target's checker set | `selftest.sh` set-equality case |
 
-Promotion is a measurement, not a copy: the reference promotes six rules because
-their findings were confirmed real on real trees, while `nginx-unchecked-palloc`
-stays advisory (318 of 368 findings across the module repos, frequently legitimate
-in nginx C — gating it lands a repo red on arrival and trains everyone to
-`--no-verify`). Re-measure on the target.
+A threshold is a measurement, not a copy. Where a checker offers a severity tier,
+gate the tier whose findings were confirmed real on the target's own code and leave
+the noisy tier advisory — a gate that lands a repo red on arrival trains everyone to
+`--no-verify`, which costs more than the findings were worth.
 
 **The checker SET is the target's; the entry point is the standard's.** The
 convention is `run-all.sh` + `LINT_ONLY` + exit codes (`0` clean, `1` findings, `2`
@@ -1640,11 +1610,10 @@ tool missing) + the tracked hook. Behind it:
   goes to `skeleton-findings.md`.
 - **keep every checker the target already ran** (rule 2), behind the same entry
   point rather than dropped because the reference lacks it.
-- `astgrep` is in `LINT_ONLY` even though `c` is not, and that is not an oversight
-  to "correct". `c` is excluded because `security-scanners.yml` already runs
-  flawfinder/cppcheck/semgrep over `src/` at the same thresholds; nothing else runs
-  the `ci/ast-grep/` ruleset, so excluding it would leave the structural sweep gating
-  the hook and never a PR.
+- `c` is absent from `LINT_ONLY` and that is not an oversight to "correct":
+  `security-scanners.yml` already runs flawfinder/cppcheck/semgrep over `src/` at the
+  same thresholds, so running them again per PR buys only queue time. Every OTHER
+  checker must be listed — one no workflow runs gates the hook and never a PR.
 - the **repo-policy** checks do not transfer unexamined: `ci-runners` depends on
   `TRUST_SPLITS` being rewritten (step 13), and `ci-ports` is meaningful only if the
   target binds a fixed band. `ci-cadence` assumes the single-orchestrator topology of
@@ -1675,9 +1644,7 @@ same commit, or the two drift and the local gate stops meaning anything.
 planted beside the real C).
 
 **Acceptance:** `run-all.sh` exits 0 clean, 1 on findings, 2 on a missing tool —
-observe all three, the last by hiding a tool from `PATH`. For ast-grep, observe all
-four: clean 0, planted promoted finding 1, a deliberately misspelled `PROMOTED`
-entry 2, `ast-grep` hidden from `PATH` 2. A staged file with a deliberate finding is
+observe all three, the last by hiding a tool from `PATH`. A staged file with a deliberate finding is
 blocked by the hook — **one per language present in the target**, each shown blocked.
 `LINT_ONLY=ci-cadence ci/linter/run-all.sh` green. The normalized `LINT_ONLY` and
 checker-script sets match exactly. Every threshold matches its

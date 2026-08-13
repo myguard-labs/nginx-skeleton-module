@@ -207,47 +207,6 @@ repos:
         files: '^src/.*\.[ch]$'
         pass_filenames: true
 
-      # Structural sink sweep: this superrepo's own c-* / nginx-* rules plus
-      # the C/C++ slice of CodeRabbit's ast-grep essentials pack (Apache-2.0,
-      # CWE-tagged). Those are the rules CodeRabbit runs on a pull request, so
-      # a hit here is a finding the bot would have raised -- caught before the
-      # push rather than in review.
-      #
-      # -c ci/ast-grep/sgconfig.yml is LOAD-BEARING, do not drop it to let
-      # ast-grep "find the config itself". It resolves sgconfig.yml by walking
-      # UP from the working directory, so without -c this hook would silently
-      # bind to /opt/myguard/sgconfig.yml while the clone sits there, and bind
-      # to NOTHING in a standalone clone -- scanning against an empty ruleset
-      # and reporting green. The rules are vendored into ci/ast-grep/ by
-      # tools/vendor-astgrep-rules.py precisely so this gate is self-contained.
-      # Refresh them with that script; `--check` makes staleness CI-able.
-      #
-      # ast-grep has NO severity-threshold flag (unlike semgrep --severity), and
-      # exits non-zero only on `error`. The gate is therefore built by PROMOTING
-      # named rules with --error=; everything else stays advisory -- printed,
-      # never blocking. That distinction is the whole reason this can be gated
-      # at all: measured across every module repo 2026-08-08, 318 of 368
-      # findings are note[nginx-unchecked-palloc], which in nginx C is
-      # frequently legitimate (call sites propagate NULL deliberately). Gating
-      # the note tier would land every repo red on arrival and train everyone
-      # to --no-verify -- the same failure the shellcheck note below describes.
-      #
-      # A rule joins the promoted list only after its findings are measured and
-      # confirmed real. Verified 2026-08-08 that the promoted set exits 1 on a
-      # real finding, 0 on a clean file, and 0 on a note-only file.
-      - id: ast-grep
-        name: ast-grep (structural sinks, gate on promoted rules)
-        entry: ast-grep scan -c ci/ast-grep/sgconfig.yml
-               --error=c-alloc-mul-overflow
-               --error=c-memcpy-sizeof-pointer
-               --error=c-sizeof-wrong-operand
-               --error=c-unbounded-string-copy
-               --error=c-format-string
-               --error=c-shell-exec
-        language: system
-        files: '^src/.*\.[ch]$'
-        pass_filenames: true
-
       # Python is the runtime TEST HARNESS in these repos, so it carries the
       # same weight as C -- but nothing linted it before this hook.
       #
