@@ -1,4 +1,4 @@
-# sync-sha: 8e2e89a3a24039ca55b868794ab95dd7e22798bd4fabb14af64ba29f99484980
+# sync-sha: 28c424efc9f8f496d31b220b8c09d954019951bf8aff6d6aaa416fe4f19671be
 name: Security scanners
 
 # Static analysis gate on every PR/push: flawfinder (blocking at >=4),

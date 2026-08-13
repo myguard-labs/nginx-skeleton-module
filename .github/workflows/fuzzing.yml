@@ -1,4 +1,4 @@
-# sync-sha: 48a9b957bcf6bbcd6a5461035a8818ebaa6d0e2562d1a28e607b71d78c9f3189
+# sync-sha: e919e98c938565ac59fab773899be37b5e23500f3def51da2afbdbd9866ee365
 name: Fuzzing
 
 # Fast fuzz REGRESSION gate on every PR/push: replay the committed corpus +

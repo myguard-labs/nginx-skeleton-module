@@ -112,6 +112,20 @@ else
     echo "(dry-run: skipping submodule update)"
 fi
 
+# --- re-stamp the adopter-facing files -------------------------------------
+# bump-actions.sh and bump-tools.sh edit stamped files (every workflow carries
+# a sync-sha, and the action pins appear in each one), which invalidates the
+# content hashes sync-stamp.sh records. Without this, ci/linter/lint-sync-stamp.sh
+# fails on the bot's own PR -- the branch lands red every week for a reason that
+# is never a real finding, which is how a gate trains its reader to ignore it.
+#
+# Runs after all four bumpers so it stamps the final content, and only when
+# something changed: on a no-op week the stamps are already correct and the
+# rewrite would be pure noise. Skipped under --dry-run, which writes nothing.
+if [ "$DRY_RUN" = 0 ] && [ "$CHANGED" = 1 ]; then
+    bash ci/tools/sync-stamp.sh
+fi
+
 if [ "$CHANGED" = 0 ]; then
     echo "everything up to date, nothing to bump"
 fi
