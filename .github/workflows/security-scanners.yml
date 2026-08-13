@@ -1,4 +1,4 @@
-# sync-sha: 3f4c49742ed2aa259c896dbd7721138ed1cfb8866ee016a4f40b945a2d73b916
+# sync-sha: 8e2e89a3a24039ca55b868794ab95dd7e22798bd4fabb14af64ba29f99484980
 name: Security scanners
 
 # Static analysis gate on every PR/push: flawfinder (blocking at >=4),
@@ -47,7 +47,7 @@ permissions:
 jobs:
   scanners:
     name: Security scanners
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 20
     steps:
       - name: Checkout module

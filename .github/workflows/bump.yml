@@ -1,4 +1,4 @@
-# sync-sha: 9cb9c68e6d7d24b928068c96316e18f6ace87197685ce332cc443367bef01a7d
+# sync-sha: dc6efc2c7e50d9ac788a954cfd3bbd8d92cc24db2fde8505b97b6cabb6e16093
 name: Bump versions
 
 # Weekly: check nginx.org/angie.software for newer releases than what's
@@ -34,7 +34,7 @@ permissions:
 jobs:
   bump:
     name: Bump nginx/angie/action/linter pins
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     steps:
       - name: Checkout

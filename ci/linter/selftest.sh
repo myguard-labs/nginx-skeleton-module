@@ -218,9 +218,9 @@ policy_ 0 secrets-typed-ok secrets
 policy_ 1 schedule-only-runner-labels runners
 
 # The -ok fixture is checked through a TEMPORARY COPY whose selector is
-# regenerated from TRUST_SPLITS, rather than against the tracked file's
-# hardcoded copy of this repo's pool. An adopter that narrows TRUST_SPLITS to
-# its own labels -- which step 13 tells it to do -- otherwise sees this
+# regenerated from workflow_policy.py, rather than against the tracked file's
+# hardcoded selector. A hosted-only adopter, which step 13 tells to turn
+# SELF_HOSTED_ALLOWED off, otherwise sees this
 # POSITIVE control fail against a selector the fixture still spells the
 # skeleton's way: correct behaviour, confusing symptom, and it cost the
 # nginx-cache-turbo-module adoption a debugging detour on 2026-08-10.
@@ -235,16 +235,16 @@ if approved="$(python3 ci/linter/fixture-selector.py 2>/dev/null)" \
     cp -r "$ok_src/." "$ok_tmp/"
     python3 ci/linter/fixture-selector.py --write \
         "$ok_tmp/.github/workflows/nightly.yml"
-    case_ 0 "policy runners: schedule-only-runner-labels-ok (selector from TRUST_SPLITS)" \
+    case_ 0 "policy runners: schedule-only-runner-labels-ok (selector from workflow_policy)" \
         env "WORKFLOW_POLICY_ROOT=$ok_tmp" \
         python3 ci/linter/workflow_policy.py runners
     rm -rf "$ok_tmp"
 else
-    # Hosted-only repo: TRUST_SPLITS is empty, so there is no approved
+    # Hosted-only repo: SELF_HOSTED_ALLOWED is off, so there is no approved
     # self-hosted selector for a positive control to assert. Say so rather
     # than silently skipping -- a control that vanishes is the failure mode
     # this whole file exists to catch.
-    echo "skip policy runners: schedule-only-runner-labels-ok (TRUST_SPLITS is empty: hosted-only)"
+    echo "skip policy runners: schedule-only-runner-labels-ok (SELF_HOSTED_ALLOWED off: hosted-only)"
 fi
 
 # WIRING CONTROLS. These assert that a checker is reachable at all, which is a

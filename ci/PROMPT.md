@@ -111,13 +111,13 @@ Three rules outrank every step:
    reference does not survives, gets a badge and a table row, and goes back to the
    skeleton (step 33). A rollout that reduces coverage is a regression wearing a
    standardisation PR.
-3. **Nothing self-hosted is portable.** `builder02` is a myguard machine and no
-   linter here will tell an adopter they copied it — `TRUST_SPLITS` ships
-   containing that label and **approves it by construction**, so a copied selector
-   is green everywhere until it dispatches to hardware the target does not own, or
-   queues forever against a label nobody answers. Step 2 records `POOL_OWNED`; step
-   13 settles it before any workflow is ported or demoted. Default is hosted-only,
-   and an unfamiliar `origin` is always hosted-only.
+3. **The pool is a variable, not a label in the tree.** Every `runs-on` reads
+   `vars.POOL` and falls back to `ubuntu-latest` when it is unset, so the
+   workflows are portable by construction and a copied selector never dispatches
+   to hardware the target does not own. What still needs settling is the
+   CHECKER's half: `SELF_HOSTED_ALLOWED` in `workflow_policy.py` must match the
+   ownership decision. Step 2 records `POOL_OWNED`; step 13 settles it. Default
+   is hosted-only, and an unfamiliar `origin` is always hosted-only.
 
 Standing constraints, all steps:
 
@@ -251,7 +251,7 @@ step forbids.
   `git diff --stat` plus a spot check, never by trusting the loop that made it.
 - **Do not ask questions you can answer.** Ambiguity is resolved by this prompt,
   the target's tree, its memory mirror, or the safe default (`POOL_OWNED=no`,
-  hosted runner, gate left honest). Ask only when proceeding under any assumption
+  `POOL` unset, gate left honest). Ask only when proceeding under any assumption
   would be unsafe or waste the whole run.
 - **Be token-frugal and fast.** Read only the phase you are on. Compute answers
   with a command instead of reading a tree: `rg -c` before `rg -l` before `rg -n`,
@@ -410,11 +410,10 @@ ci/tools/prompt-section.sh --hash          # in the REFERENCE checkout
      checks silently vacuous (a `.yaml` extension, an inline `on: [pull_request]`,
      a comment after a job key). Ship the YAML-parse version and run
      `ci/linter/selftest.sh` plus `ci/linter/fixtures/policy/`.
-   - **Runner identity** (step 13) — any change touching a `runs-on`,
-     `actionlint.yaml` or `TRUST_SPLITS` carries our pool with it. Run probes 1b
-     and 2. A single-change sync is the likeliest way a self-hosted selector
-     re-enters a target step 13 already cleaned — the reference's copy is the
-     source, and it is `POOL_OWNED=yes`.
+   - **Runner identity** (step 13) — any change touching a `runs-on` or
+     `SELF_HOSTED_ALLOWED`. Run probes 1 and 2. A single-change sync is the
+     likeliest way an inline pool or a fork ternary re-enters a target step 13
+     already cleaned.
    - **No `src/`** (step 12) — everything scoped to `src/` selects nothing and
      reports success.
    - **Long-runners back on the PR lane** (step 14) — re-run step 16's greps. A
@@ -584,9 +583,10 @@ gh run list -R <owner>/<module> --limit 20 \
 
 ### Record `POOL_OWNED` now — it binds every later step
 
-The `origin` URL is the input to the only question that can put our hardware in
-someone else's repository. Answer it once, here, in writing, before any workflow is
-read:
+The `origin` URL decides whether this target may use a self-hosted pool at all.
+The workflows themselves are safe either way — an unset `POOL` is hosted — but
+the checker and the repo variable must agree with the answer. Write it down once,
+here, before any workflow is read:
 
 ```sh
 git remote get-url origin
@@ -602,10 +602,10 @@ is the thing an adopter copies first.
 
 Under `POOL_OWNED=no`, these hold for the whole run and are not revisited:
 
-- every `runs-on` is a bare `ubuntu-latest` — no ternary, no `fromJSON`, no
-  `self-hosted` (step 13)
-- `TRUST_SPLITS` is an empty frozenset and `.github/actionlint.yaml` declares no
-  `self-hosted-runner:` block (step 13)
+- every `runs-on` is the approved `fromJSON(vars.POOL || '["ubuntu-latest"]')`
+  selector, which resolves to `ubuntu-latest` while `POOL` is unset (step 13)
+- `SELF_HOSTED_ALLOWED = False` in `ci/linter/workflow_policy.py`, and the
+  `POOL` repo variable is never set (step 13)
 - no step may introduce a self-hosted selector "temporarily to measure something".
   Steps 28–29 become hosted-only scheduling work.
 
@@ -980,87 +980,68 @@ One step, three ordered parts. The order matters: workflows first, policy files
 second, probes last — the gate is the last thing to change, so its findings are
 about what remains.
 
-`builder02` is the label of **a physical machine myguard owns**, spread across three
-files that must agree:
+The pool label lives in the `POOL` repo variable, not in the tree. What must
+agree is the workflows, the checker, and the variable:
 
 ```sh
-grep -rn 'builder02' \
-    .github/workflows/ .github/actionlint.yaml ci/linter/workflow_policy.py
+grep -rnE "runs-on:|vars\\.POOL" .github/workflows/
 ```
 
-| File | What it holds | In the reference, 2026-08-03 |
+| File | What it holds | In the reference, 2026-08-13 |
 |---|---|---|
-| `.github/workflows/*.yml` | the `runs-on` fork ternary | 15 selectors in 7 workflows |
-| `.github/actionlint.yaml` | the declared label list | 3 mentions, one `self-hosted-runner:` block |
-| `ci/linter/workflow_policy.py` | `TRUST_SPLITS`, the approved-selector set | 5 mentions, three label combinations |
+| `.github/workflows/*.yml` | every `runs-on`, all the same one line | 15 selectors in 7 workflows |
+| `ci/linter/workflow_policy.py` | `APPROVED_SELECTOR` + `SELF_HOSTED_ALLOWED` | 2 mentions |
 
-23 sites; re-derive rather than trusting the number.
-
-**Nothing in the toolchain catches a copied label.** actionlint validates runner
-labels for a *literal* `runs-on` only, and every self-hosted selector here is a
-`fromJSON(...)` ternary it stays silent on (measured 2026-08-02: `builder02` →
-`buidler02` was invisible to it). zizmor has no idea which labels you are entitled
-to. `lint-ci-runners.sh` compares against `TRUST_SPLITS` — which, if copied
-unedited, **contains `builder02` and approves it by construction**. The failure is
-not a red CI you fix; it is a green CI either queueing forever against a label
-nobody answers, or dispatching to a runner you do not own.
-
-**The rule: under `POOL_OWNED=no` (step 3), every job is `ubuntu-latest` with no
-ternary at all.** The fork ternary answers one question — may this code touch *our*
-build host? An adopter with no build host has no such question, and an expression
-whose fallback arm names someone else's machine is a default-deny that defaults to
-somebody else's hardware.
-
-**Start from what the target actually has:**
-
-| The target's `runs-on` | What it means | What you do |
-|---|---|---|
-| fork ternary naming `builder02` | copied from us, or a former myguard repo | rewrite all to `ubuntu-latest` |
-| a **bare list** — `[self-hosted, builder02, lxc]`, no ternary | worse: no fork arm, so a fork PR runs on our host | same rewrite, and note it in the PR body |
-| already `ubuntu-latest` everywhere | nothing to do | confirm, record, move on — do **not** add a ternary |
-
-The third row is what an adopter gets wrong by following the reference too
-faithfully. A hosted-only target that gains a ternary has gained a selector pointing
-at hardware it does not own, from a step whose entire purpose was to remove one.
+**Since 2026-08-13 no machine name appears in the tree at all.** The pool lives
+in a `POOL` repo variable, read at dispatch:
 
 ```yaml
-# before (reference, myguard-owned pool)
-runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
-
-# after (any adopter without their own pool)
-runs-on: ubuntu-latest
+runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
 ```
 
-**Then the two policy files**, after the workflows and never before:
+Set `POOL` and the job runs on that pool; leave it unset and it falls back to
+`ubuntu-latest`. **That makes the workflows portable by construction** — an
+adopter copying them unedited gets hosted runners, because an unset variable is
+the safe arm. This replaced 15 copies of a `builder02` fork ternary; do not
+reintroduce one.
 
-1. `.github/actionlint.yaml` — delete the `self-hosted-runner:` block; declaring
-   labels you never use trains the next person to add one.
-2. `ci/linter/workflow_policy.py` — reduce `TRUST_SPLITS` to an empty frozenset.
-   `HOSTED.fullmatch` covers every selector now, and an empty approved-set makes any
-   future self-hosted selector a finding rather than a silent pass.
+**So the old portability hazard is gone, and step 13 is now short:**
 
-Emptying `TRUST_SPLITS` while the workflows still carry self-hosted selectors
-produces one finding per selector: doing it in the reference produced **16
-findings**. Expected intermediate state, and exactly the noise that buries the
-finding you are hunting in the probes below.
+| The target's situation | What you do |
+|---|---|
+| owns no self-hosted pool | **nothing.** Leave `POOL` unset. Confirm `SELF_HOSTED_ALLOWED = False` in `workflow_policy.py` |
+| owns a pool | set `POOL` in the repo's Actions variables to its own label list; set `SELF_HOSTED_ALLOWED = True` |
+| workflows carry an inline pool or a fork ternary | copied from an older revision — rewrite to the selector above |
 
-**Then verify, both directions.** For a hosted-only adopter, a grep proving
-`builder02` absent says nothing about whether the *checker* still approves it. For a
-pool-owned adopter, the inverse mistake is just as bad. Test the branch selected by
-`POOL_OWNED`:
+`SELF_HOSTED_ALLOWED` is the checker's half of the same decision. Left `True` in
+a hosted-only target it approves a self-hosted selector nobody intended; left
+`False` in a pool-owning target it rejects the selector the workflows use. It is
+not the access control — GitHub's fork-PR approval policy is — it is the check
+that the tree says what the owner meant.
+
+**Fork trust is no longer expressed in the workflows.** The old ternary sent
+fork PRs to hosted runners; that decision now lives in the repo's Actions
+setting (`Require approval for all external contributors`), because a repo
+variable is readable by a fork-PR run and cannot gate anything. Two consequences
+an adopter must not miss:
+
+- **Check the approval policy is set**, or a fork PR runs unreviewed on the
+  pool. Verify, do not assume:
+  `gh api /repos/OWNER/REPO/actions/permissions/fork-pr-contributor-approval`
+  must report `all_external_contributors`.
+- **`pull_request_target` stays forbidden** and `check_runners` enforces it.
+  It runs the base repo's workflow with full secrets against fork code, reads
+  `vars.POOL` like any other job, and the approval policy does not gate it.
+  It is the one remaining way fork code reaches the pool.
+
+**Then verify, both directions.** A grep proving no machine name is present says
+nothing about whether the *checker* agrees with the ownership decision.
 
 ```sh
-# 1. no myguard runner identity survives in a hosted-only adopter
-grep -rn 'builder02\|b02lxc' .github/ ci/linter/workflow_policy.py 2>/dev/null
-#    -> POOL_OWNED=no: expected no hits
-#    -> POOL_OWNED=yes: hits allowed only for the target's approved selectors
-
-# 1b. and no self-hosted selector survives under ANY spelling. Probe 1 greps our
-#     CURRENT label; it cannot see `[self-hosted, lxc]`, a renamed pool, or a
-#     ternary whose fallback arm was edited to a different machine.
-grep -rnE 'runs-on:.*(self-hosted|fromJSON)' .github/workflows/
-#    -> POOL_OWNED=no: MUST be empty. Any hit is a selector pointing at hardware
-#       the target does not own, whatever it is called.
+# 1. no selector has drifted back to an inline pool or a fork ternary
+grep -rnE "runs-on:.*(self-hosted|fork)" .github/workflows/
+#    -> MUST be empty for every target, pool-owned or not. The approved
+#       selector names no pool and no fork arm.
 
 # 2. the checker implements the ownership decision from step 3
 cat > .github/workflows/_probe.yml <<'EOF'
@@ -1070,30 +1051,38 @@ on:
     - cron: "0 4 * * 1"
 jobs:
   p:
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON('["self-hosted","some-pool","lxc"]') }}
     steps:
       - run: echo probe
 EOF
-# POOL_OWNED=no: MUST exit 1; this target does not own the reference pool.
-# POOL_OWNED=yes: MUST exit 0 when this is the target's approved selector.
+# MUST exit 1 for EVERY target: an inline pool is not the approved selector,
+# whether or not this target owns a pool.
 LINT_ONLY=ci-runners ci/linter/run-all.sh
+rm .github/workflows/_probe.yml
 
-# Both branches must reject an unregistered selector.
-sed -i 's/builder02/unregistered-probe/' .github/workflows/_probe.yml
-LINT_ONLY=ci-runners ci/linter/run-all.sh   # MUST exit 1
+# 3. the approved selector is accepted (positive control -- without it, a red
+#    in probe 2 is equally consistent with "the check flags everything")
+cat > .github/workflows/_probe.yml <<'EOF'
+name: probe
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+jobs:
+  p:
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
+    steps:
+      - run: echo probe
+EOF
+LINT_ONLY=ci-runners ci/linter/run-all.sh   # MUST exit 0
 rm .github/workflows/_probe.yml
 ```
 
 Probe 2 needs `ci/linter/run-all.sh`, which step 6 installed — so unlike earlier
 revisions of this prompt, it runs here rather than being deferred.
 
-**Probe 2 going green for a hosted-only target, or red for a pool-owned target's
-approved selector, is the bug this step exists for.** It means `TRUST_SPLITS` does
-not match the ownership decision. Fix the policy file; do not delete the probe.
-
-**In the unedited reference probe 2 exits 0, correctly** — `builder02` is an
-approved selector *here*. The probe is a statement about the TARGET; running it in
-the reference proves nothing.
+**Probe 2 going green, or probe 3 going red, is the bug this step exists for.**
+Both are checker faults, not workflow faults: fix `workflow_policy.py`, do not
+delete the probe.
 
 Stated honestly so nobody optimises it back: the self-hosted pool is what makes
 `ci-deep.yml`'s monthly matrix and long fuzz runs affordable. On hosted runners
@@ -1101,10 +1090,12 @@ those are slower and bounded by the 6-hour job limit. That is a scheduling probl
 not a reason to point a `runs-on` at hardware you do not control.
 
 **Only under `POOL_OWNED=yes`** is self-hosted available at all, and then it is
-opt-in and a separate commit — never smuggled into the port. All three files change
-together with their own labels, the fork arm stays the hosted runner, and the
-condition stays `github.event.pull_request.head.repo.fork` — not `github.actor`, not
-a repo variable, both of which a fork controls. Then read steps 28–29 in full.
+opt-in: set the `POOL` variable and flip `SELF_HOSTED_ALLOWED`, never smuggled
+into the port. Fork trust is not expressed in the workflow — `vars.POOL` is
+readable by a fork-PR run and gates nothing — so it rests entirely on the repo's
+fork-PR approval policy plus the `pull_request_target` ban. Confirm the approval
+policy is `all_external_contributors` before setting `POOL`. Then read steps
+28–29 in full.
 
 "The target is ours and shares our build host" is a claim about **hardware and
 runner registration**, not about the GitHub org. A myguard-owned repo whose CI has
@@ -1112,11 +1103,13 @@ never been registered with the pool is still `ubuntu-latest`: a selector is answ
 by a registered runner or by nothing, and "nothing" is a job queued forever on a
 green-looking PR.
 
-**Acceptance:** no `runs-on` names a label the target does not own; both policy
-files carry the target-owned state; `actionlint` parses every edited workflow; for
-`POOL_OWNED=no`, probes 1 and 1b are empty and probe 2 exits 1; for
-`POOL_OWNED=yes`, every hit is a target-approved selector and probe 2 exits 0. The
-unregistered selector is red in both branches. Paste all outputs in the PR body.
+**Acceptance:** every `runs-on` is the approved selector and no pool label
+appears in the tree; `SELF_HOSTED_ALLOWED` matches `POOL_OWNED`; `actionlint`
+parses every edited workflow; probe 1 is empty, probe 2 exits 1 and probe 3 exits
+0 — in BOTH branches, since the approved selector is the same either way. Under
+`POOL_OWNED=yes`, additionally: the `POOL` variable is set, and the fork-PR
+approval policy reports `all_external_contributors`. Paste all outputs in the PR
+body.
 **Barrier A is now clear; step 14 may begin.**
 
 ## 14 — Demote every long-runner off the PR lane
@@ -1301,7 +1294,7 @@ The **rejected-test list** (front matter) applies to every test written in steps
 Also port, adapting paths: `.github/versions.env` (single source of truth for
 version **and sha256** pins — tarballs verified by digest, not version string),
 `.github/scripts/{load-versions,compute-versions,fetch-verify}.sh`,
-`.github/actions/build-cache/`, and `.github/actionlint.yaml` (subject to step 13).
+and `.github/actions/build-cache/`.
 
 **Anything newly ported that is unbounded goes straight to the scheduled lane** —
 step 14's split applies to arrivals, not only to what the target already had.
@@ -1615,7 +1608,7 @@ tool missing) + the tracked hook. Behind it:
   same thresholds, so running them again per PR buys only queue time. Every OTHER
   checker must be listed — one no workflow runs gates the hook and never a PR.
 - the **repo-policy** checks do not transfer unexamined: `ci-runners` depends on
-  `TRUST_SPLITS` being rewritten (step 13), and `ci-ports` is meaningful only if the
+  `SELF_HOSTED_ALLOWED` matching the target (step 13), and `ci-ports` is meaningful only if the
   target binds a fixed band. `ci-cadence` assumes the single-orchestrator topology of
   steps 15–16, so it is live only now. `ci-secrets` is **vacuously green on a target
   that declares no secrets**, which is most of them and is the correct state — say

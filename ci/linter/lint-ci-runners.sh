@@ -23,7 +23,7 @@
 # silent. Silence and a pass are the same output.
 #
 # Usage: ci/linter/lint-ci-runners.sh [files...]   Env: LINT_MODE=staged|all
-# Extend: approved runner selectors are the TRUST_SPLITS set in workflow_policy.py.
+# Extend: the approved runner selector is APPROVED_SELECTOR in workflow_policy.py.
 
 # shellcheck source=ci/linter/lib.sh
 . "$(git rev-parse --show-toplevel)/ci/linter/lib.sh"

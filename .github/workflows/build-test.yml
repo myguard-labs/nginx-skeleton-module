@@ -1,4 +1,4 @@
-# sync-sha: 50035b396bc84a80d2658645e17a19c4b0f18bd04ea0dcdfd30e50876bdbc12e
+# sync-sha: 1adb4d01bea3cae2c914befae1c359899696e03ce29d5d115d257be2f514a7c0
 name: Build&Test
 
 # The PR gate: everything here must be green to merge. Fast enough to run on
@@ -32,7 +32,7 @@ permissions:
 jobs:
   validation:
     name: Validation
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -104,7 +104,7 @@ jobs:
 
   build:
     name: Build
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -255,7 +255,7 @@ jobs:
 
   test-nginx:
     name: Test::Nginx
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 20
     env:
       # This job's OWN 64-wide port band. The build host runs six ephemeral slots and
@@ -357,7 +357,7 @@ jobs:
   # the renamed module actually builds.
   rename-smoke:
     name: Rename smoke
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -421,7 +421,7 @@ jobs:
 
   asan:
     name: ASan and UBSan
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 30
     env:
       # This job's OWN band, disjoint from the runtime job's 19200 and

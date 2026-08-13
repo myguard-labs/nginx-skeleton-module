@@ -3,16 +3,15 @@
 
 WHY THIS EXISTS
     ci/linter/fixtures/policy/schedule-only-runner-labels-ok/ is the POSITIVE
-    control for the runner-label check: same shape as the typo fixture, but a
-    selector `workflow_policy.py` must accept. Hardcoding this repo's pool in it
-    makes that control wrong for every adopter, because step 13 of
-    ci/PROMPT.md tell an adopter to narrow TRUST_SPLITS to labels it actually
-    owns. The fixture then asserts a selector the adopter deliberately rejects,
-    the control fails, and the failure looks like a bug in the checker rather
-    than a stale fixture. Reported by the nginx-cache-turbo-module adoption,
-    2026-08-10.
+    control for the runner-label check: same shape as the drift fixture, but a
+    selector `workflow_policy.py` must accept. Hardcoding a selector in it makes
+    that control wrong for every adopter, because step 13 of ci/PROMPT.md tells
+    a hosted-only adopter to turn SELF_HOSTED_ALLOWED off. The fixture then
+    asserts a selector the adopter deliberately rejects, the control fails, and
+    the failure looks like a bug in the checker rather than a stale fixture.
+    Reported by the nginx-cache-turbo-module adoption, 2026-08-10.
 
-    Deriving the selector from TRUST_SPLITS makes the fixture correct by
+    Deriving the selector from workflow_policy.py makes the fixture correct by
     construction: whatever a repo approves is what its positive control asserts.
 
 USAGE
@@ -22,8 +21,9 @@ USAGE
     Called by ci/linter/selftest.sh before the -ok fixture is checked.
 
 EXIT
-    0 selector printed/written, 1 TRUST_SPLITS is empty (a hosted-only repo has
-    no approved self-hosted selector, so the fixture pair does not apply).
+    0 selector printed/written, 1 SELF_HOSTED_ALLOWED is False (a hosted-only
+    repo has no approved self-hosted selector, so the fixture pair does not
+    apply).
 """
 
 from __future__ import annotations
@@ -37,11 +37,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 
 
 def approved_selector() -> str | None:
-    """The lexicographically first entry of TRUST_SPLITS, or None if empty.
-
-    Deterministic rather than arbitrary: `sorted()` so two runs of the selftest
-    on the same tree rewrite the fixture identically and the diff stays empty.
-    """
+    """APPROVED_SELECTOR, or None if this repo allows no self-hosted runners."""
     spec = importlib.util.spec_from_file_location(
         "workflow_policy", HERE / "workflow_policy.py"
     )
@@ -49,8 +45,9 @@ def approved_selector() -> str | None:
         return None
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    splits = sorted(mod.TRUST_SPLITS)
-    return splits[0] if splits else None
+    if not getattr(mod, "SELF_HOSTED_ALLOWED", False):
+        return None
+    return mod.APPROVED_SELECTOR
 
 
 def main(argv: list[str]) -> int:

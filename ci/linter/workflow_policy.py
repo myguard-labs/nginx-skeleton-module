@@ -60,41 +60,44 @@ class PolicyError(Exception):
     """Could not run the check (exit 2) -- never confused with "clean"."""
 
 
-def _trust_split(labels: list[str]) -> str:
-    """The one approved runner selector shape, for a given self-hosted label set.
-
-    Built rather than pasted three times: the FORK ARM is the security-relevant
-    half and must be byte-identical in every accepted form. Three hand-written
-    copies drift, and a drifted copy is silently accepted by the membership test
-    below while meaning something slightly different.
-    """
-    inner = ",".join(f'"{label}"' for label in labels)
-    return (
-        "${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || "
-        + f"fromJSON('[{inner}]') }}}}"
-    )
-
-
-# Accepted self-hosted label sets. Each keeps FORK pull requests on a
-# GitHub-hosted runner and everything else on the self-hosted pool.
+# The one approved runner selector: the pool is a repo VARIABLE, with a
+# GitHub-hosted fallback baked into the expression.
 #
-# Why the split matters here specifically: a `pull_request`-triggered job checks
-# out and EXECUTES scripts from the PR head. The self-hosted runners are persistent
-# and shared with the Debian package builds, so running a fork's code on them is
-# arbitrary code execution on the build host, with whatever the previous job
-# left behind still on disk. The hosted arm is what makes this repo safe to
-# accept outside contributions to -- which a public template repo exists to do.
+#     runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
 #
-# Widening the label set only changes WHICH slots are eligible, so a new entry
-# here is fine. Changing the fork arm is not, which is why it is not a parameter.
-TRUST_SPLITS = frozenset(
-    _trust_split(labels)
-    for labels in (
-        ["self-hosted", "builder02", "lxc"],
-        ["self-hosted", "builder02"],
-        ["self-hosted", "builder02", "docker"],
-    )
-)
+# Set `POOL` on a repo and its jobs run on the self-hosted pool; leave it unset
+# and they fall back to `ubuntu-latest`. That is the access-granting mechanism:
+# per repo, from the GitHub UI, with no pool label anywhere in the tree.
+#
+# What replaced what, so this is not "simplified" back later: every selector
+# used to inline `["self-hosted","builder02","lxc"]` behind a
+# `github.event.pull_request.head.repo.fork` ternary, in 15 places. The fork arm
+# kept a fork PR's code off the persistent build host; the duplication meant a
+# mistyped label was a job that queued forever, which is why this check existed.
+#
+# Both concerns moved, deliberately (2026-08-13):
+#   - The pool label is now ONE value in the GitHub UI. A typo there fails at
+#     `fromJSON` parse or falls back to hosted -- visible immediately, not a
+#     silent queue. There is nothing left in the tree to spell wrong.
+#   - Fork trust is now GitHub's `all_external_contributors` approval policy:
+#     every fork PR needs an explicit approval before any job runs. Verified
+#     set on this repo 2026-08-13.
+#
+# That second move is why `pull_request_target` stays forbidden below and why
+# that ban matters MORE than it used to. `pull_request_target` runs the base
+# repo's workflow, with full secrets, against the fork's code -- and it would
+# read `vars.POOL` like any other job, putting unreviewed fork code on the build
+# host. The approval policy does not gate it. The ban in check_runners() is the
+# only thing in this repo that does.
+APPROVED_SELECTOR = "${{ fromJSON(vars.POOL || '[\"ubuntu-latest\"]') }}"
+
+# Adopters that own no self-hosted pool set this to None: there is then no
+# approved self-hosted selector, every job must be GitHub-hosted, and the
+# positive-control fixture pair does not apply (ci/linter/fixture-selector.py
+# exits 1, selftest.sh skips that case). Kept as an explicit switch because a
+# hosted-only repo must not have to edit the check itself to be correct --
+# reported by the nginx-cache-turbo-module adoption, 2026-08-10.
+SELF_HOSTED_ALLOWED = True
 
 HOSTED = re.compile(r"ubuntu-(?:latest|[0-9]+\.[0-9]+)")
 
@@ -255,46 +258,47 @@ def check_runners() -> int:
                     )
                 continue
             runner = selector(node["runs-on"])
-            if runner in TRUST_SPLITS or HOSTED.fullmatch(runner):
+            approved = SELF_HOSTED_ALLOWED and runner == APPROVED_SELECTOR
+            if approved or HOSTED.fullmatch(runner):
                 continue
             if pr_reachable:
                 errors.append(
                     f"{path.name}:{job} has runs-on: {runner} -- must be "
-                    "GitHub-hosted or an approved fork-aware trust split "
-                    "(see TRUST_SPLITS in ci/linter/workflow_policy.py)"
+                    "GitHub-hosted or the approved vars.POOL selector "
+                    "(see APPROVED_SELECTOR in ci/linter/workflow_policy.py)"
                 )
                 continue
             # NOT PR-reachable, so there is no fork-trust question to answer --
-            # but the membership test still runs, because nothing else in the
-            # toolchain checks these labels at all.
+            # but the check still runs, because nothing else in the toolchain
+            # looks at these selectors at all.
             #
             # actionlint validates runner labels only for a LITERAL `runs-on`.
-            # Every self-hosted selector in this repo is a `fromJSON(...)`
-            # ternary, so actionlint goes QUIET on all of them regardless of
-            # what .github/actionlint.yaml declares -- and silence reads exactly
-            # like a pass. The exact-string membership test above is what
-            # actually catches a mistyped pool label, so skipping it for
-            # schedule-only workflows left bump.yml and ci-deep.yml (six
-            # selectors) with no label checking anywhere. Measured 2026-08-02:
-            # `builder02` -> `buidler02` in build-test.yml was reported, the
-            # same edit in bump.yml and ci-deep.yml was silent on both this
-            # check and actionlint.
+            # Every selector here is a `fromJSON(...)` expression, so actionlint
+            # goes QUIET on all of them -- and silence reads exactly like a pass.
+            # Skipping schedule-only workflows would leave bump.yml and
+            # ci-deep.yml (six selectors) unchecked by anything: measured
+            # 2026-08-02 against the old inline labels, a typo in build-test.yml
+            # was reported while the same edit in bump.yml and ci-deep.yml was
+            # silent on both this check and actionlint.
             #
-            # A typo here does not fail at lint time or at dispatch time. It
-            # fails as a queued job that never picks up a runner, on a weekly
+            # The pool label itself now lives in the `POOL` repo variable and is
+            # no longer spellable here, so what this catches is a selector that
+            # has drifted from the approved form -- an inlined label set, a
+            # resurrected fork ternary, a hand-edited fallback. Those fail at
+            # dispatch as a job that never picks up a runner, on a weekly
             # schedule nobody is watching.
             errors.append(
-                f"{path.name}:{job} has runs-on: {runner} -- not an approved "
+                f"{path.name}:{job} has runs-on: {runner} -- not the approved "
                 "selector. This workflow is not PR-reachable, so the finding is "
-                "about the LABELS, not fork trust: nothing else validates them "
-                "(actionlint skips non-literal runs-on) and an unknown label is "
-                "a job that never starts "
-                "(see TRUST_SPLITS in ci/linter/workflow_policy.py)"
+                "about the SELECTOR SHAPE, not fork trust: nothing else "
+                "validates it (actionlint skips non-literal runs-on) and a "
+                "drifted selector is a job that never starts "
+                "(see APPROVED_SELECTOR in ci/linter/workflow_policy.py)"
             )
     return report(
         "lint-ci-runners",
         errors,
-        "fork PRs stay on hosted runners; trusted events reach self-hosted",
+        "no pull_request_target; every runs-on is hosted or the vars.POOL selector",
     )
 
 

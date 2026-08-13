@@ -1,4 +1,4 @@
-# sync-sha: d4159c8318e48ef76cb8005690d398e3289d88d68ee019939b91b21a69c5126d
+# sync-sha: a219256516e969247f5db5008bfb51e340ff9d7ded29efb276098e3abf0e9fea
 name: A/UBSan
 
 # Dedicated ASan+UBSan soak, PATH-GATED: only runs when a PR/push touches code
@@ -38,7 +38,7 @@ permissions:
 jobs:
   asan-soak:
     name: ASan/UBSan soak (60s)
-    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","builder02","lxc"]') }}
+    runs-on: ${{ fromJSON(vars.POOL || '["ubuntu-latest"]') }}
     timeout-minutes: 45
     steps:
       - name: Checkout module
