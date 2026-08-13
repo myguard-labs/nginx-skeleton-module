@@ -302,6 +302,13 @@ case_ 0 "lint-spelling is dispatched by run-all.sh" \
 # spec, and the next person to edit the real one would have to remember to
 # leave the broken copy broken. The generated pair is small enough to read.
 promptroot="$(mktemp -d "${TMPDIR:-/tmp}/lint-prompt.XXXXXX")"
+# Trapped, not merely rm'd at the end of the block: a case_ failure or a Ctrl-C
+# before the cleanup line leaves the generated tree in TMPDIR forever. One trap
+# covers both temp roots this file makes -- `trap ... EXIT` REPLACES any earlier
+# EXIT trap rather than adding to it, so the badroot trap further down would
+# otherwise silently drop this one.
+badroot=""
+trap 'rm -rf "$promptroot" ${badroot:+"$badroot"}' EXIT INT TERM
 mkdir -p "$promptroot/ci"
 printf '## 1 — First\n## 2 — Second\n## 3 — Third\n' > "$promptroot/ci/PROMPT.md"
 
@@ -317,6 +324,13 @@ printf 'See step 2 for details.\n' > "$promptroot/README.md"
 case_ 0 "prompt-steps: a citation naming a real step is clean" \
     env PROMPT_STEPS_ROOT="$promptroot" \
     python3 ci/linter/lint-prompt-steps.py
+
+# The citation is pinned to step 1, which EVERY fixture below defines, so the
+# two sequence controls can only go red through the branch they name. Left at
+# "step 2" this was a false control: the gap fixture defines 1 and 3, so the run
+# also exits 1 down the dangling-citation path, and deleting the gap check
+# outright still printed ok. Verified by mutation 2026-08-13.
+printf 'See step 1 for details.\n' > "$promptroot/README.md"
 
 # A hole in the sequence -- how a half-finished renumber leaves the file.
 printf '## 1 — First\n## 3 — Third\n' > "$promptroot/ci/PROMPT.md"
@@ -339,14 +353,14 @@ printf '### 1 : First\n### 2 : Second\n' > "$promptroot/ci/PROMPT.md"
 case_ 2 "prompt-steps: no recognisable step headings is exit 2, not clean" \
     env PROMPT_STEPS_ROOT="$promptroot" \
     python3 ci/linter/lint-prompt-steps.py
-rm -rf "$promptroot"
 
 # Unparsable YAML is "could not run" (2), never "clean" -- GitHub may still
 # read a file this parser rejects, so a verdict over the rest of the tree would
 # be unsupported. Fixture is generated: a committed broken-YAML file would trip
 # yamllint on the real tree.
+# Assigned into the variable the EXIT trap above already covers; a second
+# `trap ... EXIT` here would replace that one and leak $promptroot.
 badroot="$(mktemp -d)"
-trap 'rm -rf "$badroot"' EXIT
 mkdir -p "$badroot/.github/workflows"
 printf 'on: [pull_request\njobs: {\n' > "$badroot/.github/workflows/broken.yml"
 case_ 2 "policy runners: unparsable YAML is exit 2, not clean" \

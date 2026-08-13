@@ -71,11 +71,31 @@ SKIP_EXACT = (
 MAX_GAPS_SHOWN = 12
 
 
+def _git_env():
+    """The ambient environment with git's tree-location overrides removed.
+
+    A git hook exports GIT_DIR (and sometimes GIT_WORK_TREE), and those win over
+    `cwd`. Inherited, `git ls-files` below answers for the CHECKOUT no matter
+    which directory it is pointed at -- so the selftest's generated root would
+    be listed as the real repo, the os.walk fallback would never run, and the
+    controls would assert against the wrong tree while still printing ok.
+    """
+    env = os.environ.copy()
+    for var in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+        env.pop(var, None)
+    return env
+
+
 def candidate_files(root):
     """Files that may cite a step, relative to root."""
     try:
         out = subprocess.run(
-            ["git", "ls-files"], cwd=root, check=True, capture_output=True, text=True
+            ["git", "ls-files"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=_git_env(),
         ).stdout
         names = out.splitlines()
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -89,16 +109,36 @@ def candidate_files(root):
     return [n for n in names if CITERS_RE.match(n)]
 
 
-def main():
-    root = (
-        os.environ.get("PROMPT_STEPS_ROOT")
-        or subprocess.run(
+def repo_root():
+    """The checkout root, or None when there is not one to find.
+
+    None rather than an exception: the caller turns it into exit 2 ("could not
+    run"), which is the documented contract. Letting CalledProcessError escape
+    printed a traceback and exited 1, and 1 is the status that means "findings"
+    -- so a missing git, or a run from outside any checkout, read as a defect in
+    PROMPT.md.
+    """
+    try:
+        return subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
             check=True,
             capture_output=True,
             text=True,
+            env=_git_env(),
         ).stdout.strip()
-    )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
+def main():
+    root = os.environ.get("PROMPT_STEPS_ROOT") or repo_root()
+    if not root:
+        print(
+            "lint-prompt-steps: not a git checkout and PROMPT_STEPS_ROOT is "
+            "unset -- cannot locate ci/PROMPT.md",
+            file=sys.stderr,
+        )
+        return 2
 
     prompt_rel = "ci/PROMPT.md"
     prompt_path = os.path.join(root, prompt_rel)
@@ -179,4 +219,13 @@ def main():
 
 
 if __name__ == "__main__":
+    # `--citers-re` exists so lint-prompt-steps.sh can ask for the trigger
+    # pattern instead of keeping a second copy of it. A copy goes stale the
+    # first time someone follows the docstring and extends CITERS_RE here: the
+    # wrapper's list would still be the old one, and under LINT_MODE=staged a
+    # change to the newly-added citing path would no longer start the check --
+    # the gate staying quiet in exactly the case it was extended for.
+    if len(sys.argv) > 1 and sys.argv[1] == "--citers-re":
+        print(CITERS_RE.pattern)
+        sys.exit(0)
     sys.exit(main())
