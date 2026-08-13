@@ -65,7 +65,7 @@ PY_MODULES=(
 # bare `pip3 install` fails on Debian 12+ and `--break-system-packages` is a
 # worse answer than an isolated venv per tool.
 PIPX_TOOLS=(
-    "ruff:ruff==0.16.1"                # Python lint + format check, pinned:
+    "ruff:ruff==0.16.2"                # Python lint + format check, pinned:
                                       # an unpinned ruff changes findings under
                                       # you and local stops matching CI, same
                                       # reasoning as the semgrep pin below.
@@ -74,7 +74,7 @@ PIPX_TOOLS=(
                                       # frozen security scanner stops finding
                                       # what it was added for. A new rule going
                                       # red is a finding to triage, not drift.
-    "semgrep:semgrep==1.169.0"        # C, pinned to the CI version on purpose:
+    "semgrep:semgrep==1.172.0"        # C, pinned to the CI version on purpose:
                                       # an unpinned semgrep changes findings
                                       # under you and local stops matching CI.
     "codespell:codespell"             # ci/linter/lint-spelling.sh. Unpinned: the
