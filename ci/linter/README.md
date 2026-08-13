@@ -20,11 +20,13 @@ finding shellcheck could have named in two seconds. Every script is standalone;
 | `lint-ci-secrets.sh` | `.github/workflows/` | a `workflow_call` member declares the secrets it needs with `required: true`; callers wire them by name and never use `secrets: inherit` |
 | `lint-sync-stamp.sh` | `.github/workflows/`, `.github/scripts/`, `.github/actions/` | every skeleton-shared file carries a current `# sync-sha:` stamp, so an adopter can diff two repos' `--list` output and see exactly what drifted |
 | `lint-docs-drift.sh` | `.github/workflows/`, `README.md` | every workflow documented, every documented workflow exists |
+| `lint-prompt-steps.sh` | `ci/PROMPT.md`, `README.md`, `ci/feedback/`, `ci/tools/`, `ci/linter/` | every `step N` citation names a step `ci/PROMPT.md` defines, and the step sequence has no gap or duplicate |
 | `lint-spelling.sh` | all tracked files | codespell over prose, comments and log strings; vendored trees excluded via `lib.sh` |
 | `run-all.sh` | all of the above | runs every check, reports once |
 | `install-linters.sh` | — | apt-get → pipx → cpan → upstream binary |
 | `lib.sh` | — | sourced helpers (file selection, missing-tool failure) |
 | `workflow_policy.py` | — | the repo-policy checks the `ci-*`/`docs-drift` wrappers call (`runners`, `ports`, `docs`, `cadence`, `secrets`) |
+| `lint-prompt-steps.py` | — | the citation/sequence check `lint-prompt-steps.sh` calls; `PROMPT_STEPS_ROOT` points it at a generated tree for the selftest |
 | `selftest.sh` | — | negative controls for the gate itself; run before the linters in `lint.yml`. Includes the set-equality control: every checker is named in `lint.yml`'s `LINT_ONLY` |
 | `fixtures/policy/` | — | trees the policy checks must go RED on — the known bypasses, the runner-label and step-ordering cases, and the four ways a `secrets:` declaration goes wrong; `clean/` and the `-ok` trees must stay GREEN |
 
@@ -313,6 +315,15 @@ rm .github/workflows/_probe.yml
 # docs drift, the other direction: a README reference to a workflow that is gone
 printf '\nSee .github/workflows/nosuch.yml\n' >> README.md
 LINT_ONLY=docs-drift ci/linter/run-all.sh ; git checkout README.md
+
+# a citation naming a step ci/PROMPT.md does not define -- what a renumber or a
+# deleted step leaves behind, and what nothing else in the tree can see
+printf '\nSee step 99 for details.\n' >> README.md
+LINT_ONLY=prompt-steps ci/linter/run-all.sh ; git checkout README.md
+
+# the other direction, a hole in the sequence itself. selftest.sh covers this
+# against a generated tree, so no edit to the real 2100-line spec is needed:
+#   ci/linter/selftest.sh 2>&1 | grep prompt-steps
 
 # missing tool -> exit 2, never a silent skip
 printf 'x = 1\n' > _p.py
