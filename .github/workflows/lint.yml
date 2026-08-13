@@ -1,4 +1,4 @@
-# sync-sha: 49fb627af98256c7a4fa08b69d1f3f4680a83876b52ca46d2ef402ffdf923fc1
+# sync-sha: 7849a31bc95a240fde0b4456e29a90c67dbb6f82ee1490aa9cc3d2ca71d55162
 name: Lint
 
 # The same ci/linter/ scripts a developer runs locally, run again on the PR --
@@ -74,5 +74,5 @@ jobs:
           # checker as missing. Tried 2026-08-10; the selftest failed loudly,
           # which is the correct direction, but the fix is to leave the line
           # long. Rewrap only by teaching selftest.sh to parse YAML.
-          LINT_ONLY: nginx sh python perl yaml spelling ci-runners ci-ports ci-cadence ci-secrets sync-stamp docs-drift
+          LINT_ONLY: nginx sh python perl yaml spelling ci-runners ci-ports ci-cadence ci-secrets sync-stamp docs-drift prompt-steps
         run: ci/linter/run-all.sh
