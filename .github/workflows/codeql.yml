@@ -1,4 +1,4 @@
-# sync-sha: 1b9356f02169abed418a128c55b737636244a09130cfec3267c2a924b85456e1
+# sync-sha: 50fb92e0fb39f68d56bd612e7b5639ed73bad297e6a9fb61c8a735696b00a339
 name: CodeQL
 
 # CodeQL on the module TU only.
@@ -58,8 +58,8 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             build-essential curl libpcre2-dev zlib1g-dev
 
       - name: Initialize CodeQL

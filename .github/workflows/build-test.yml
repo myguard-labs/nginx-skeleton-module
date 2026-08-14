@@ -1,4 +1,4 @@
-# sync-sha: 8e8b93dea8d03882723a6b9c2b711dd1a5aa98106b050c773c80df4073dcaa8d
+# sync-sha: f012c804d9493b3f8d507df99346ffe8c599495ce8c35d7f746c4cbe59a2ccba
 name: Build&Test
 
 # The PR gate: everything here must be green to merge. Fast enough to run on
@@ -42,8 +42,8 @@ jobs:
 
       - name: Install validation tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cppcheck shellcheck
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y cppcheck shellcheck
 
       - name: Validate scripts and source
         run: |
@@ -118,8 +118,8 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             build-essential curl libpcre2-dev zlib1g-dev
 
       - name: Restore build caches
@@ -277,8 +277,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             build-essential curl libpcre2-dev zlib1g-dev \
             cpanminus libio-socket-ssl-perl
           # Test::Nginx is not packaged on the runner; install it from CPAN.
@@ -371,8 +371,8 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             build-essential curl libpcre2-dev zlib1g-dev
 
       - name: Restore build caches
@@ -442,8 +442,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             build-essential curl libpcre2-dev zlib1g-dev \
             cpanminus libio-socket-ssl-perl
           sudo cpanm --notest --quiet Test::Nginx

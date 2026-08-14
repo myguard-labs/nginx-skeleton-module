@@ -1,4 +1,4 @@
-# sync-sha: e919e98c938565ac59fab773899be37b5e23500f3def51da2afbdbd9866ee365
+# sync-sha: 44fc3f67a0dd86dfd07ecf698a532928e3fc64f870a0e09ff5c6efb97490499e
 name: Fuzzing
 
 # Fast fuzz REGRESSION gate on every PR/push: replay the committed corpus +
@@ -45,8 +45,8 @@ jobs:
 
       - name: Install build deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             build-essential clang curl libpcre2-dev zlib1g-dev
 
       # The fuzz target links nginx's real ngx_string.c, so it needs a
