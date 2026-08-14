@@ -1,4 +1,4 @@
-# sync-sha: 8d116358f682fc2360713e342ee0987f33de0512fe8a36123e0f8909c1675fc0
+# sync-sha: c5191d68a67ddb6c36489ef1aae735aa243189ccb18fd629789b4254b7a8c921
 name: CI Deep
 
 # Exhaustive dynamic analysis. Monthly cron + on-demand ONLY -- never on a PR.
@@ -96,8 +96,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             build-essential curl libpcre2-dev zlib1g-dev \
             cpanminus libio-socket-ssl-perl
           sudo cpanm --notest --quiet Test::Nginx
@@ -188,8 +188,8 @@ jobs:
 
       - name: Install build deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             build-essential clang curl libpcre2-dev zlib1g-dev
 
       # The input goes through an env var, never ${{ }} inside run: -- template
@@ -309,8 +309,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             build-essential curl libpcre2-dev zlib1g-dev valgrind
 
       - name: Restore build caches
@@ -344,8 +344,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             build-essential curl libpcre2-dev zlib1g-dev valgrind
 
       - name: Restore build caches
@@ -397,8 +397,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y --no-install-recommends \
             build-essential curl libpcre2-dev zlib1g-dev \
             cpanminus libio-socket-ssl-perl gcovr
           sudo cpanm --notest --quiet Test::Nginx

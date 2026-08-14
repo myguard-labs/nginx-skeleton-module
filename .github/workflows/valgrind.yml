@@ -1,4 +1,4 @@
-# sync-sha: 2ea94385ae8884d27de3d04733d9b4c2d46e7d712087139dd56d1667ae8777fb
+# sync-sha: 7ba6afc1829a27b353ebcea98418bf70f332bb50aa62a69a09625fb07352d4cd
 name: Valgrind
 
 # Memcheck LITE soak on every PR/push: 60s of a mixed attack/benign request
@@ -50,8 +50,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             build-essential curl libpcre2-dev zlib1g-dev valgrind
 
       - name: Restore build caches

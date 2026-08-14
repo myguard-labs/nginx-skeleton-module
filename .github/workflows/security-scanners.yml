@@ -1,4 +1,4 @@
-# sync-sha: ffb5447d77333ad9fce77d98b0009f1bcb3c110023a7e3880d442ae86fc20bde
+# sync-sha: 89b5615be8bd5fc629494e81d4b72020c4d705d0ea529a3655638a8712e6e9c8
 name: Security scanners
 
 # Static analysis gate on every PR/push: flawfinder (blocking at >=4),
@@ -60,8 +60,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o DPkg::Lock::Timeout=120 update
+          sudo apt-get -o DPkg::Lock::Timeout=120 install -y \
             flawfinder clang-tidy bear python3 python3-pip pipx curl \
             build-essential libpcre2-dev zlib1g-dev
           # semgrep via pipx: PEP 668 blocks a bare `pip3 install` into the
