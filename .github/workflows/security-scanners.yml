@@ -1,4 +1,4 @@
-# sync-sha: ef2db629ec4717484d4b0a57c233c41993e426102d7066dd3bdde43df74735df
+# sync-sha: 7e2104612d89152a6ee78ff958a1bb1146ec6bbea8d4928335b99ef15a05ccc2
 name: Security scanners
 
 # Static analysis gate on every PR/push: flawfinder (blocking at >=4),
@@ -71,7 +71,10 @@ jobs:
           # chain (bump deliberately, same as the nginx pins). Unpinned = a
           # compromised/regressed release runs here silently on the next PR.
           SEMGREP_PIN="semgrep==1.173.0"
-          SEMGREP_WANT="1.172.0"
+          # Keep the runtime assertion coupled to the spec the weekly bump
+          # updates.  A second literal here can leave every install correct
+          # while making the gate fail before any scanner runs.
+          SEMGREP_WANT="${SEMGREP_PIN#semgrep==}"
           if command -v pipx >/dev/null; then
             # --force is load-bearing on the self-hosted runner: pipx keeps its
             # venvs between jobs, and a bare `pipx install` against an existing
