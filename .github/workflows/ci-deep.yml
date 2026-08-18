@@ -1,4 +1,4 @@
-# sync-sha: c5191d68a67ddb6c36489ef1aae735aa243189ccb18fd629789b4254b7a8c921
+# sync-sha: f98bb844dfaa67899f47bd5fe46a27c6b62058b3edbd2f996a84b41a33081b1a
 name: CI Deep
 
 # Exhaustive dynamic analysis. Monthly cron + on-demand ONLY -- never on a PR.
@@ -26,8 +26,8 @@ name: CI Deep
 # someone is actually going to act on it -- an unread alert is worse than none.
 #
 # Action pins (keep in sync with build-test.yml):
-# actions/checkout@v5.1.0        -> fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-# actions/upload-artifact@v5.0.0 -> 330a01c490aca151604b8cf639adc76d48f6c5d4
+# actions/checkout@v7.0.1        -> 3d3c42e5aac5ba805825da76410c181273ba90b1
+# actions/upload-artifact@v7.0.1 -> 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -87,7 +87,7 @@ jobs:
             label: angie
     steps:
       - name: Checkout module
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -179,7 +179,7 @@ jobs:
     timeout-minutes: 600
     steps:
       - name: Checkout module
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -280,7 +280,7 @@ jobs:
       # fuzzing.yml replays it forever after.
       - name: Upload crash artifacts
         if: failure()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz-deep-crashes
           path: ${{ github.workspace }}/ci/fuzz/crash-*
@@ -288,7 +288,7 @@ jobs:
 
       - name: Upload minimized corpus
         if: success()
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fuzz-corpus
           path: ${{ github.workspace }}/ci/fuzz/corpus-min
@@ -300,7 +300,7 @@ jobs:
     timeout-minutes: 240
     steps:
       - name: Checkout module
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -335,7 +335,7 @@ jobs:
     timeout-minutes: 240
     steps:
       - name: Checkout module
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -388,7 +388,7 @@ jobs:
       TEST_BASE_PORT: '19400'
     steps:
       - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -407,7 +407,7 @@ jobs:
         run: bash ci/tools/coverage.sh "$NGINX_VERSION"
 
       - name: Upload the coverage report
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-report
           path: .build/coverage

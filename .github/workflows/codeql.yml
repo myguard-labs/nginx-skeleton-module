@@ -1,4 +1,4 @@
-# sync-sha: 50fb92e0fb39f68d56bd612e7b5639ed73bad297e6a9fb61c8a735696b00a339
+# sync-sha: b8f7a34b3854e36870d7dcd914ada658a222dd2ff94a2bb3cc41fef89a362ca0
 name: CodeQL
 
 # CodeQL on the module TU only.
@@ -15,8 +15,8 @@ name: CodeQL
 # and the hosted image already ships the CodeQL bundle.
 #
 # Action pins:
-# actions/checkout@v5.1.0      -> fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-# actions/cache@v4.3.0         -> 0057852bfaa89a56745cba8c7296529d2fc39830
+# actions/checkout@v7.0.1      -> 3d3c42e5aac5ba805825da76410c181273ba90b1
+# actions/cache@v6.1.0         -> 55cc8345863c7cc4c66a329aec7e433d2d1c52a9
 # github/codeql-action@v4.37.7  -> ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
 
 env:
@@ -49,7 +49,7 @@ jobs:
       security-events: write   # required to upload the SARIF results
     steps:
       - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -67,6 +67,7 @@ jobs:
         with:
           languages: c-cpp
           queries: security-extended
+          build-mode: manual
           # Deliberately no paths/paths-ignore: they do nothing for C/C++ (see
           # the header comment). The `module` build below is what scopes this.
 

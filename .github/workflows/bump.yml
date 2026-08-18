@@ -1,4 +1,4 @@
-# sync-sha: 2b6195bbf821d590a3251714d3ebbc4933c5778cb0e018736380ea82ff0cc67e
+# sync-sha: e0a7d7293bc7036bb066ea17788085aa441657cce0dee8bde5cb497590f3b8f0
 name: Bump versions
 
 # Weekly: check nginx.org/angie.software for newer releases than what's
@@ -16,7 +16,7 @@ name: Bump versions
 # git (via GIT_ASKPASS) for the branch push.
 #
 # Action pins (keep in sync with build-test.yml):
-# actions/checkout@v5.1.0 -> fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+# actions/checkout@v7.0.1 -> 3d3c42e5aac5ba805825da76410c181273ba90b1
 
 on:
   schedule:
@@ -38,7 +38,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           submodules: true
