@@ -1,4 +1,4 @@
-# sync-sha: 8ebd05c0510ec7d1bfe1fffa693831b4a5338d61614a2e3fb82b3da2df4c1ffe
+# sync-sha: 9a215d9777bff203ac9252b49e503724b0c62aa4a91e8ce64cf7f4e8701c96d4
 name: CI
 
 # Single entry point for the PR suite. The seven checks below used to be
@@ -99,7 +99,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Full history: a shallow clone has no common ancestor with the base,

@@ -6,6 +6,7 @@
 [![Valgrind](https://github.com/myguard-labs/nginx-skeleton-module/actions/workflows/valgrind.yml/badge.svg)](https://github.com/myguard-labs/nginx-skeleton-module/actions/workflows/valgrind.yml)
 [![CodeQL](https://github.com/myguard-labs/nginx-skeleton-module/actions/workflows/codeql.yml/badge.svg)](https://github.com/myguard-labs/nginx-skeleton-module/actions/workflows/codeql.yml)
 [![A/UBSan](https://github.com/myguard-labs/nginx-skeleton-module/actions/workflows/asan.yml/badge.svg)](https://github.com/myguard-labs/nginx-skeleton-module/actions/workflows/asan.yml)
+[![Lint](https://github.com/myguard-labs/nginx-skeleton-module/actions/workflows/lint.yml/badge.svg)](https://github.com/myguard-labs/nginx-skeleton-module/actions/workflows/lint.yml)
 [![CI Deep](https://github.com/myguard-labs/nginx-skeleton-module/actions/workflows/ci-deep.yml/badge.svg)](https://github.com/myguard-labs/nginx-skeleton-module/actions/workflows/ci-deep.yml)
 
 Skeleton from [deb.myguard.nl](https://deb.myguard.nl). Free to use. As shipped

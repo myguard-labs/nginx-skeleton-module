@@ -1,4 +1,4 @@
-# sync-sha: 7ba6afc1829a27b353ebcea98418bf70f332bb50aa62a69a09625fb07352d4cd
+# sync-sha: 775fbd0f26cc6612f00f2579aa7fd3ae519dae4daf9ac3b4eb7f2093bc3aa896
 name: Valgrind
 
 # Memcheck LITE soak on every PR/push: 60s of a mixed attack/benign request
@@ -16,7 +16,7 @@ name: Valgrind
 # still catches uninitialised reads there.
 #
 # Action pin (keep in sync with build-test.yml):
-# actions/checkout@v5.1.0 -> fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+# actions/checkout@v7.0.1 -> 3d3c42e5aac5ba805825da76410c181273ba90b1
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -41,7 +41,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout module
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 

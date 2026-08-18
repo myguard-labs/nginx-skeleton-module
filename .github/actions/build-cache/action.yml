@@ -1,4 +1,4 @@
-# sync-sha: f7436f157eb77342ba00e1595ac3c87719831453501f4d41701aa4959ac9bef2
+# sync-sha: e76be60c50007e055243ab86cf1c38bf593cf412a97af9a191965bb2ce2f3b03
 name: Build cache
 description: >-
   Restore the ccache + nginx source/build caches for one build mode. Hybrid by
@@ -63,7 +63,7 @@ runs:
     # contents and never fold in newly-compiled objects. A per-commit primary +
     # a restore-keys ladder is the documented way to get a rolling cache.
     - name: Restore ccache
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/ccache
         key: ccache-${{ runner.os }}-${{ inputs.mode }}-${{ inputs.flavor }}-${{ inputs.nginx-version }}-${{ github.sha }}
@@ -74,7 +74,7 @@ runs:
     # The upstream tarball never changes for a given version -- key on version
     # alone, no restore-keys ladder (a "close" tarball is the wrong tarball).
     - name: Cache source tarball
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .build/${{ inputs.flavor }}-${{ inputs.nginx-version }}.tar.gz
         key: src-${{ inputs.flavor }}-${{ inputs.nginx-version }}
@@ -91,7 +91,7 @@ runs:
     # If you add restore-keys here to "improve the hit rate", you have
     # reintroduced the bug. Don't.
     - name: Cache build tree (exact-match only -- see comment)
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: .build/${{ inputs.flavor }}-${{ inputs.nginx-version }}-${{ inputs.mode }}
         key: >-

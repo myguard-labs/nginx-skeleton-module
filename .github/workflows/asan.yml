@@ -1,4 +1,4 @@
-# sync-sha: 927a23660b7a5deaae36f40b1048dfb7004d468262b85efef755d7190a52b8ca
+# sync-sha: c184c2052b21de8c184ccfad689a65c43eefb086d45545863afcce02fb5fd10c
 name: A/UBSan
 
 # Dedicated ASan+UBSan soak, PATH-GATED: only runs when a PR/push touches code
@@ -17,7 +17,7 @@ name: A/UBSan
 # complementary, not redundant.
 #
 # Action pins (keep in sync with build-test.yml / valgrind.yml headers):
-# actions/checkout@v5.1.0 -> fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+# actions/checkout@v7.0.1 -> 3d3c42e5aac5ba805825da76410c181273ba90b1
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout module
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
