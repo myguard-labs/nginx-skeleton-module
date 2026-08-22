@@ -102,7 +102,13 @@ step() { printf '\n== %s\n' "$*"; }
 rc=0
 
 report() {
-    printf '%-14s %s\n' "$1" "$(command -v "$1" 2>/dev/null || echo MISSING)"
+    local path
+    if path=$(command -v "$1" 2>/dev/null); then
+        printf '%-14s %s\n' "$1" "$path"
+    else
+        printf '%-14s MISSING\n' "$1"
+        rc=1
+    fi
 }
 
 have_mod() { python3 -c "import $1" >/dev/null 2>&1; }

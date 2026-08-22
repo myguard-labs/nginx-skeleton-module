@@ -761,9 +761,25 @@ the same one.
   `--check` is invisible to `lint.yml`; a tool the target needs and the installer
   never heard of is worse.
 
-**Acceptance:** `install-linters.sh` succeeds from a clean environment and `--check`
-lists every tool the checker set needs; `.yamllint`, `.perlcriticrc` and
-`codespell-ignore.txt` are present.
+**Two checkers here are reference-only and do not port.** `lint-prompt-steps.sh` /
+`lint-prompt-steps.py` lint this `PROMPT.md`'s own step citations, and
+`lint-sync-stamp.sh` checks the skeleton-shared `.github/` content stamps. Neither
+has a target analogue, so **do not port either one into the target** (they stay here,
+in the reference). `run-all.sh` is glob-driven, so simply not copying the files is the
+whole edit — but say so explicitly, because the obvious reading is that the checker
+set ports 1:1.
+
+**Acceptance:** `install-linters.sh` succeeds from a clean environment;
+`.yamllint`, `.perlcriticrc` and `codespell-ignore.txt` are present; and `--check`
+both lists every tool the checker set needs **and exits non-zero when any of them is
+missing**. Prove the exit code, not just the listing — a `--check` that prints
+`MISSING` and exits 0 is the "checker turned no-op" class inside the installer meant
+to prevent it, and `lint.yml` gates on the status, not the text:
+
+```sh
+env -i PATH=/usr/bin:/bin HOME="$HOME" bash ci/linter/install-linters.sh --check; echo "$?"
+# must be non-zero while tools are missing, and 0 once they are all installed
+```
 
 ## 7 — The tracked hook
 
@@ -1198,8 +1214,24 @@ rest. Where that cannot be changed, the reachability fact step 16 needs is the c
 job appearing in the orchestrator run's job list with a real conclusion — record that
 and the group string instead.
 
-**Acceptance:** every member carries both triggers; `actionlint` clean; the run list
-showing every member twice, pasted in the PR body. A member that ran once was never
+**"Double-run" means two JOBS in one run, not two runs.** A `workflow_call` member
+never yields a second top-level run — the caller's run absorbs it as jobs. Do not
+look for a run list with each member listed twice; that state cannot occur on GitHub
+Actions, and a worker hunting for it will burn a cycle on an artifact that does not
+exist. The observable form of the same property is: exactly one top-level run for the
+PR event, containing each member's jobs from BOTH its own `pull_request:` trigger and
+the `ci.yml` call.
+
+**Acceptance:** every member carries both triggers; `actionlint` clean; and, pasted
+in the PR body, the output of
+
+```sh
+gh run list -R <owner>/<repo> --event pull_request --branch <branch> --json databaseId,name
+gh run view <id> -R <owner>/<repo> --json jobs --jq '.jobs[].name' | sort | uniq -c
+```
+
+showing one run for the PR event whose job list contains every member — each member
+appearing twice there is the double-run evidence. A member appearing once was never
 called — fix `ci.yml` and re-run, unless its concurrency group is the cause above.
 **Step 16 does not begin until this evidence exists.**
 
@@ -1218,6 +1250,40 @@ members carried both.
 repo with *no* PR gate at all. Do not take it until step 15 showed **every** member
 running twice. If even one did not double-run, fix `ci.yml` and repeat step 15; do
 not proceed on the theory that it will resolve itself.
+
+### ⚠ This step RENAMES every check context — remap the branch gate in the same PR
+
+A standalone member reports its check context as `<its own name> / <job name>`.
+Once it runs only as a called workflow, the context becomes
+`<CALLER job name> / <job name>` — the prefix comes from the caller's job in
+`ci.yml`, not from the member's own `name:`. **Every required status check named
+in a ruleset or branch-protection rule under its old bare name now names a context
+that will never report again**, and the PR sits BLOCKED forever on a check nothing
+produces. A green run whose contexts are named differently from the gate's is
+indistinguishable from a queued one.
+
+Measured on `nginx-zstd-module` 2026-08-22: this made a green 18/18 PR permanently
+unmergeable and cost two full cycles to diagnose — because
+`repos/<owner>/<repo>/branches/<branch>/protection` returns **404 when the gate is a
+RULESET**, which reads like "no protection configured" rather than "protected by a
+different mechanism". Check both:
+
+```sh
+gh api repos/<owner>/<repo>/rulesets --jq '.[]|"\(.id) \(.name)"'
+gh api repos/<owner>/<repo>/rulesets/<id> \
+  --jq '.rules[]|select(.type=="required_status_checks")
+        |.parameters.required_status_checks[].context'
+gh api repos/<owner>/<repo>/branches/<branch>/protection 2>/dev/null   # 404 != unprotected
+```
+
+Take a rollback copy of the ruleset JSON, then remap each required context to its
+prefixed form and PUT it back — `ci/tools/remap-checks.py` does this. Do the remap in
+the SAME change as the trigger removal; between the two the branch has no working
+gate.
+
+**Acceptance addition:** every context the ruleset requires has a matching
+`<caller job name> / <job name>` that the branch actually produces. Diff the two
+lists before opening the PR, not after it blocks.
 
 Two things that break a called workflow and not a standalone one:
 
@@ -1359,6 +1425,15 @@ all seven badges in the correct order but wrote `Build & Test` for `Build&Test` 
 `Security scanners` for `Security Scanners`. Match spelling and capitalisation
 character for character, so a diff across modules shows real differences only.
 
+**This label text lives in exactly two places: the README badge row and the `## CI`
+table. It is NOT a job name.** Do not "correct" a `ci.yml` caller job name to match a
+badge — the reference deliberately sets no `name:` on those caller jobs, so each
+context stays `<called workflow's own name> / <job name>`. Renaming a caller job
+silently changes the check context, orphaning whatever the branch ruleset requires,
+and the PR then blocks forever on a check nothing will produce (same failure as step
+16's rename warning, reached by a different route). Measured on `nginx-zstd-module`
+2026-08-22.
+
 - badge row order == `## CI` table order == the list above
 - an **extra** workflow kept at step 18 goes at the END of both lists, after CI
   Deep, so the shared prefix stays comparable across modules
@@ -1370,7 +1445,9 @@ character for character, so a diff across modules shows real differences only.
 
 **Acceptance:** every badge resolves to a real workflow in the target's own repo; CI
 table and badge row in identical order and spelling; `lint-docs-drift.sh` green in
-both directions.
+both directions; and — if this step touched any name in `ci.yml` — the ruleset's
+required contexts still all have a matching `<caller job name> / <job name>` the
+branch produces (the diff from step 16's acceptance addition).
 
 ## 21 — Unit tests over the real decision TU, with their mutation pass
 
