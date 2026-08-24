@@ -1,4 +1,4 @@
-# sync-sha: 7fb143cfaa1fc029dab6cad268bec3848e9affe8044d717d861a6c67b6cd3564
+# sync-sha: a72e9644b2bad2dd34dac1465a48b8121b4f117e850221139b6525215d2f1753
 name: Security scanners
 
 # Static analysis gate on every PR/push: flawfinder (blocking at >=4),
@@ -70,7 +70,7 @@ jobs:
           # runner, so pin the version for a reproducible, non-moving supply
           # chain (bump deliberately, same as the nginx pins). Unpinned = a
           # compromised/regressed release runs here silently on the next PR.
-          SEMGREP_PIN="semgrep==1.173.0"
+          SEMGREP_PIN="semgrep==1.174.0"
           # Keep the runtime assertion coupled to the spec the weekly bump
           # updates.  A second literal here can leave every install correct
           # while making the gate fail before any scanner runs.
