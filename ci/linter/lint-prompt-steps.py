@@ -38,11 +38,19 @@ import sys
 # em-dash is the file's own convention; a hyphen is accepted so a step typed
 # with the wrong dash registers as defined rather than turning every citation
 # of it into a dangling-reference finding.
-DEF_RE = re.compile(r"^##[ \t]+(\d+)[ \t]*[—-]", re.MULTILINE)
+#
+# A lettered suffix ("## 30a") is a step inserted between two existing ones,
+# which is how a step is added without renumbering every step above it and
+# breaking its ~150 cross-references. It must be matched here: without the
+# suffix in the pattern the heading does not register as a definition at all,
+# every "step 30a" citation silently degrades to a resolving "step 30" match,
+# and the checker reports clean over a step it never saw.
+DEF_RE = re.compile(r"^##[ \t]+(\d+[a-z]*)[ \t]*[—-]", re.MULTILINE)
 
 # A CITATION is the prose form "step 27" / "Step 27". Bounded on the right so
-# "step 3" does not match inside "step 33".
-CITE_RE = re.compile(r"\bstep[ \t]+(\d+)\b", re.IGNORECASE)
+# "step 3" does not match inside "step 33" -- and so "step 30" does not match
+# inside "step 30a", which is a different step.
+CITE_RE = re.compile(r"\bstep[ \t]+(\d+[a-z]*)\b", re.IGNORECASE)
 
 CITERS_RE = re.compile(
     r"^(ci/PROMPT\.md|README\.md|ci/feedback/.*\.md|ci/tools/.*|ci/linter/.*)$"
@@ -149,7 +157,11 @@ def main():
         print(f"lint-prompt-steps: cannot read {prompt_rel}: {exc}", file=sys.stderr)
         return 2
 
-    defined = [int(m) for m in DEF_RE.findall(prompt)]
+    # Keys stay strings ("30", "30a") so a lettered step is its own definition
+    # and its own citation target. The gap check below works on the numeric
+    # part only: "30a" is an insertion between 30 and 31, never a step 31 that
+    # must exist on its own.
+    defined = [m.lower() for m in DEF_RE.findall(prompt)]
     if not defined:
         # Exit 2, not 1: with an empty step set every citation in the tree is
         # "dangling", and reporting hundreds of findings is how a useful gate
@@ -163,7 +175,8 @@ def main():
         return 2
 
     defined_set = set(defined)
-    last = max(defined_set)
+    numeric = {int(re.match(r"\d+", n).group(0)) for n in defined_set}
+    last = max(numeric)
     problems = []
 
     dupes = sorted({n for n in defined if defined.count(n) > 1})
@@ -174,7 +187,7 @@ def main():
             + " -- two headings answer to one citation"
         )
 
-    gaps = sorted(set(range(1, last + 1)) - defined_set)
+    gaps = sorted(set(range(1, last + 1)) - numeric)
     if gaps:
         shown = ", ".join(str(n) for n in gaps[:MAX_GAPS_SHOWN])
         if len(gaps) > MAX_GAPS_SHOWN:
@@ -198,7 +211,7 @@ def main():
             continue  # binary or unreadable: not a citation surface
         for lineno, line in enumerate(lines, 1):
             for m in CITE_RE.finditer(line):
-                n = int(m.group(1))
+                n = m.group(1).lower()
                 if n not in defined_set:
                     problems.append(
                         f"{rel}:{lineno}: cites step {n}, but {prompt_rel} "

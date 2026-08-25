@@ -1348,11 +1348,11 @@ The **rejected-test list** (front matter) applies to every test written in steps
 |---|---|
 | `ci.yml` | orchestrator; the ONLY `pull_request` entry point |
 | `lint.yml` | the `ci/linter/` gate, hosted runner |
-| `build-test.yml` | build, `.so` dlopens, bad config rejected, `-T` survives merged multi-context config, `-Werror`, Test::Nginx, ASan+UBSan |
+| `build-test.yml` | build, `.so` dlopens, bad config rejected, `-T` survives merged multi-context config, `-Werror`, Test::Nginx, ASan+UBSan, **unit suite native AND 32-bit** |
 | `asan.yml` | ASan/UBSan request-storm soak, static `--add-module` |
 | `fuzzing.yml` | replay every past crash, then fresh fuzz |
 | `valgrind.yml` | memcheck soak |
-| `security-scanners.yml` | flawfinder ≥4 blocks, clang-tidy blocks, semgrep ≥WARNING |
+| `security-scanners.yml` | flawfinder ≥4 blocks, clang-tidy blocks (checks pinned in `.clang-tidy`), **`gcc -fanalyzer` advisory**, semgrep ≥WARNING |
 | `codeql.yml` | CodeQL over the **module TU only** |
 | `ci-deep.yml` | monthly: long fuzz, memcheck, helgrind, nginx mainline+stable+angie matrix |
 | `bump.yml` | weekly pin bump + `ci/vendor/nginx-tests` submodule update |
@@ -1365,8 +1365,50 @@ and `.github/actions/build-cache/`.
 **Anything newly ported that is unbounded goes straight to the scheduled lane** —
 step 14's split applies to arrivals, not only to what the target already had.
 
+### Three lenses that are easy to port as decoration
+
+Each of these was absent or vacuous across the derived modules when the set was
+surveyed 2026-08-24. Port the mechanism, not just the step name — each has a
+specific way of reporting clean while measuring nothing.
+
+- **32-bit unit run** (`build-test.yml`). `ci/tests/unit/run.sh` honours
+  `CC="gcc -m32"`, but that is capability, not coverage: measured across the nine
+  derived modules, **none** invoked it, so every green run measured amd64 only.
+  A 32-bit run is where `size_t`↔`int` truncation, a pointer through an `int`,
+  and arithmetic that only overflows at 2^32 turn into failures instead of being
+  absorbed by a wider type. Needs `gcc-multilib` (without it `-m32` dies in
+  `bits/libc-header-start.h`, a fatal include error, not a link error) and a
+  `run.sh clean` first — the native run just left 64-bit `*.o` in the same
+  directory, and relinking them either fails on mixed ELF classes or silently
+  passes against stale objects.
+- **`gcc -fanalyzer`** (`security-scanners.yml`, via `ci/tools/fanalyzer.sh`).
+  A second engine, not a clang wrapper: the two overlap partly and each catches
+  leaks the other misses. Two traps, both of which exit 0 having proven nothing.
+  First, `-fsyntax-only` **silently disables** `-fanalyzer` — compile with `-c`.
+  Second, and less obvious: analyser findings are **warnings**, and gcc exits 0
+  on warnings. Verified 2026-08-24 on gcc 14.2.0 against a deliberate malloc
+  leak — the diagnostic printed in full and gcc still exited 0. There is no
+  `-Werror=analyzer-*` wildcard to promote them with (gcc 14 has ~50 individual
+  `-Wanalyzer-<name>` options and no group; `-Werror=analyzer-all` is rejected),
+  and bare `-Werror` also reddens on unrelated pre-existing build warnings the
+  replayed argv carries. So the oracle is the diagnostic text — grep for
+  `[-Wanalyzer-`. Land it advisory (`continue-on-error`) and promote once its
+  findings on the target are measured and confirmed real, the same way an
+  ast-grep rule earns its `--error`.
+- **A tracked `.clang-tidy`** (repo root). The check list must live in the tree,
+  not on the workflow's command line: a `--checks=` flag **overrides** the file
+  silently, so carrying both puts them out of sync and "clang-tidy is clean"
+  means different things depending on who ran it. Move the list into
+  `.clang-tidy` and drop `--checks`/`--warnings-as-errors` from the invocation.
+
+Both new gates need a positive AND a negative control before you believe them:
+a file with a real defect must go red, a clean file green. A gate verified only
+on clean code is indistinguishable from one that cannot fire.
+
 **Acceptance:** `actionlint` clean; every workflow above either present or
-explicitly accounted for as not applicable; step 16's greps still hold.
+explicitly accounted for as not applicable; step 16's greps still hold; the
+32-bit unit run and `-fanalyzer` each demonstrated red-on-defect, not merely
+green-on-clean.
 
 ## 18 — Triage the workflows the reference does not have
 
@@ -1837,8 +1879,9 @@ complete — merge it before opening PR3.**
 
 # Phase 6 — Depth pass and close out
 
-**PR3 opens here.** Six steps. Phase 5 installed the gates; this phase asks whether
-any of them would catch anything, then closes the job out.
+**PR3 opens here.** Seven steps. Phase 5 installed the gates; this phase asks whether
+any of them would catch anything, whether the set is the right set, then closes the
+job out.
 
 **This phase reads configuration and evidence — it does not run soaks.** Every
 long-runner was demoted to the scheduled lane at step 14 and is exercised in phase 7,
@@ -1864,6 +1907,98 @@ with no evidence attached is not an answer.
 
 **Acceptance:** all five answered with the evidence named; helgrind's applicability
 settled with a `file:line`; no long run started by this step.
+
+## 30a — Dynamic-analysis coverage: audit the set, then widen it
+
+Step 30 asked whether each gate that exists reaches the module. This step asks the
+other half: **is the set of gates the right set at all**, and does each one
+cover the surface it claims to. Same phase-6 rule — this reads configuration
+and evidence and does not start a soak. What it produces is the widening work;
+phase 7 runs it.
+
+**You may add or remove dynamic-analysis tools.** The reference set (ASan, UBSan,
+TSan, memcheck, helgrind, DRD, libFuzzer) is a starting point, not a fixed roster.
+A tool that cannot fire on this module is noise on the schedule and buys a green
+that proves nothing — remove it with the evidence step 30 demands. A defect class
+the module can plainly have and no gate can catch is a coverage gap — add the tool
+or the case that catches it. Both directions need a written reason.
+
+**Testkit first.** `nginx-module-testkit`
+(`https://github.com/myguard-labs/nginx-module-testkit`, conventionally
+vendored at `ci/t/harness`) is the **preferred vehicle** for widening, ahead
+of hand-rolled scripts, a bespoke driver or another Test::Nginx file. It
+already carries the oracles most of these classes need, one document per
+attack surface under its `docs/`: hostile and malformed input
+(`property-fuzz`, `stateful-property-fuzz`, `keepalive-bleed`),
+allocation-failure injection (`fault_slab=` / `fault_palloc=` /
+`fault_tempfile=` / `fault_accept=`, driven by `fault-matrix`, plus `fakesrv`
+for upstream faults), leak pressure (fd, cycle-pool and slab deltas,
+`rss-slope`), concurrency, lifecycle and environment. It runs its own matrix
+across nginx and Angie and across plain and sanitizer builds, so a widened
+case inherits the ASan/UBSan leg rather than needing a new workflow.
+
+Reach for something else only when testkit genuinely cannot express the case, and
+say in one line what it could not express.
+
+Note what testkit buys that a sanitizer does not, because the two are not
+substitutes and this is the usual reason a set looks complete and is not: ASan
+catches the corruption, but a descriptor or a cycle-pool byte leaked once per
+request is not corruption — no sanitizer fires, and the module dies in production
+weeks later. The delta oracles are what catch that class. Conversely a leak oracle
+sees no overflow. Cover both.
+
+**Zero-hook mode is the cheap entry.** A consumer registering no
+`ngx_test_probe_hooks_t` still gets pid, fds (split by kind), `smaps`, cycle-pool
+stats and per-zone slab accounting — enough for fd and memory-leak assertions with
+no module-specific C. Adopting the harness is roughly: add the submodule, add the
+probe HTTP surface from `PROBE_HTTP_TEMPLATE.c` (~120 lines, all behind
+`#ifdef NGX_TEST_HARNESS`), compile the probe sources only when
+`TEST_HARNESS=1` is exported at configure time, and write a rule file. The
+probe must be **absent from a packaged build** — not inert, not compiled at
+all; verify that the way the harness's "Never ship it" section requires, and
+treat a probe symbol in a release artifact as a hard stop.
+
+Note the `-1` sentinel: `/proc`-derived fields render `-1` where the reading cannot
+be taken, and the delta oracles reject it rather than subtracting
+`-1 − -1 = 0` into a pass. A rule set that reports green on a host where those
+readings are unavailable is reporting a harness failure as a result — check
+which fields actually carried a value.
+
+**Per-tool, answer what it covers and what it cannot.** One row each, evidence
+named, `not applicable` allowed only with the `file:line` that proves it:
+
+| Tool | Widen when | Structurally blind to |
+|---|---|---|
+| **ASan** | the soak's config exercises only part of the directive surface, or a parse/buffer path is unreached | per-request leaks that are freed at cycle teardown; anything on a path the soak's config never enables |
+| **UBSan** | integer, shift, alignment or enum paths are reachable and unchecked — confirm which checks are actually enabled, not just that `-fsanitize=undefined` appears | anything the compiler proved away; a check left out of the enabled set |
+| **TSan** | the module has cross-worker or cross-thread shared state (same predicate step 30 settled for helgrind) | single-worker modules; it needs the racing access to actually execute |
+| **memcheck** | request shapes reaching the module are narrower than the handler's branches | slow leaks below the soak's duration; anything `valgrind.supp` suppresses — re-read the suppressions, a copied file silently suppresses the module's own errors |
+| **helgrind / DRD** | shared state exists per step 30 | no shared state means no widening, and the gate comes off the schedule |
+| **fuzzing** | the corpus or dictionary does not cover a reachable parse surface, table literal or state transition | anything behind the seam's entry point; a target that never reaches the real `*_scan.c` |
+| **testkit** | any of: an error path never exercised because the allocator never fails; a per-request fd or byte leak; a reload/lifecycle transition; pipelined or split framing; upstream faults | a defect with no observable delta and no HTTP surface |
+
+**Give changes back to testkit.** If you adapt the harness — a new oracle, a rule
+directive, a fixed trap, a probe field, a scenario — the change belongs **upstream,
+not forked into the target**. Commit it in the testkit checkout
+(`/opt/myguard/labs/nginx-module-testkit`, the canonical top-level one, never
+`ci/t/harness` inside the consumer) and open a PR against it with documentation:
+what the change adds, which attack surface's document under `docs/` it belongs to
+and the edit to that document, the oracle that decides its verdict, and the
+way that class can produce a green run proving nothing. That last one is the
+harness's own documentation convention — match it. Load `/pr-create` before
+writing the PR.
+Normal submodule order applies: the testkit PR merges first, then the consumer's
+submodule pin moves, then the superrepo gitlink.
+
+The target's own pin bump is a separate commit from the widening that needed
+it, so a regression bisects to one or the other.
+
+**Acceptance:** every tool in the table answered — widened with the case named,
+covered already with the evidence, or removed/not-applicable with the `file:line`;
+testkit named as the vehicle or a one-line reason it could not be; every harness
+adaptation upstreamed as a PR URL with its `docs/` edit, or an explicit "no harness
+changes were needed"; the probe proven absent from a packaged build if the harness
+was adopted; no soak started here.
 
 ## 31 — Re-audit the gates that drift
 
@@ -2054,10 +2189,18 @@ kept every checker the target ran, but by now the file set has moved.
 - **Blind spots.** A linter present but never reaching a path is not coverage.
   Confirm each one's file selection matches the paths it guards, including
   untracked-then-added files and vendored dirs excluded on purpose.
+- **Word size.** Everything above measures whichever architecture CI runs on,
+  which is amd64 unless something says otherwise — so a defect that only appears
+  at a narrower pointer or `size_t` is outside every lens listed here. Confirm
+  the unit suite runs 32-bit as well as native (step 17), and that the 32-bit
+  job is not quietly passing because it relinked stale native objects. If the
+  target genuinely ships amd64-only, record that as the reason rather than
+  leaving the gap unstated.
 
 **Acceptance:** a table of file type → linter → rule profile, with every gap either
 closed in PR3 or carrying its evidence-based not-applicable result; the normalized
-`LINT_ONLY` and checker-script sets match per step 27.
+`LINT_ONLY` and checker-script sets match per step 27; the 32-bit result is
+recorded as a run, a justified N/A, or a gap.
 
 ## 38 — Kick off the scheduled workflows
 
@@ -2132,6 +2275,13 @@ submodule bump of `ci/vendor/nginx-tests` counts the same way.
 reference shapes and verified to reach the module (step 30). Cover concrete reachable
 gaps with the smallest useful target, corpus case, time-box, applicable helgrind
 path, or memcheck request shape.
+
+Step 30a already produced this list — work its per-tool table, do not re-derive it,
+and carry its verdicts forward: a tool it removed stays removed, a widening it named
+gets implemented here and its case run. Testkit is the preferred vehicle for a new
+case (step 30a), and any harness adaptation goes upstream as a PR rather than into
+the target. Anything step 30a listed and this step did not implement is reported as
+outstanding, with its reason.
 
 **And coverage.** Report the current figure and the branches gcovr shows as never
 taken, then add meaningful cases for reachable gaps, each with its negative control.
