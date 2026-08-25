@@ -79,8 +79,8 @@ case "${1:-}" in
             }
             p != "" {
                 n++
-                if ($0 ~ /^## [0-9]+ — /) {
-                    match($0, /[0-9]+/); s = substr($0, RSTART, RLENGTH)
+                if ($0 ~ /^## [0-9]+[a-z]* — /) {
+                    match($0, /[0-9]+[a-z]*/); s = substr($0, RSTART, RLENGTH)
                     if (first == "") first = s
                     last = s
                     rng = (first == last) ? first : first "-" last
@@ -95,7 +95,7 @@ case "${1:-}" in
         # next step heading, phase marker, or phase title. Front matter and phase
         # preambles are deliberately excluded — see THE HASH above.
         awk '
-            /^## [0-9]+ — / { on = 1; print; next }
+            /^## [0-9]+[a-z]* — / { on = 1; print; next }
             /^<!-- phase:[0-9]+ -->/ { on = 0; next }
             /^# Phase /              { on = 0; next }
             on { print }
@@ -120,7 +120,7 @@ case "${1:-}" in
                     echo "prompt-section: no phase $phase in PROMPT.md" >&2; exit 2; }
                 ;;
             --steps)
-                phase_body "$phase" 2>/dev/null | grep '^## [0-9]\+ — ' || {
+                phase_body "$phase" 2>/dev/null | grep '^## [0-9]\+[a-z]* — ' || {
                     echo "prompt-section: no phase $phase in PROMPT.md" >&2; exit 2; }
                 ;;
             *)
