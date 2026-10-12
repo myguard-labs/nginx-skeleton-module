@@ -1,4 +1,4 @@
-# sync-sha: 7fb143cfaa1fc029dab6cad268bec3848e9affe8044d717d861a6c67b6cd3564
+# sync-sha: 84cdb210994fbdd95e684ba529e25b8dd246ed603f35ea372d73e988ab4738ff
 name: Security scanners
 
 # Static analysis gate on every PR/push: flawfinder (blocking at >=4),
@@ -26,7 +26,7 @@ name: Security scanners
 #
 # Action pins (keep in sync with build-test.yml):
 # actions/checkout@v7.0.1        -> 3d3c42e5aac5ba805825da76410c181273ba90b1
-# actions/upload-artifact@v7.0.1 -> 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+# actions/upload-artifact@v7.0.2 -> cf430e030ddbb5b0abf93d22962f4752f3646cd9
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -70,7 +70,7 @@ jobs:
           # runner, so pin the version for a reproducible, non-moving supply
           # chain (bump deliberately, same as the nginx pins). Unpinned = a
           # compromised/regressed release runs here silently on the next PR.
-          SEMGREP_PIN="semgrep==1.173.0"
+          SEMGREP_PIN="semgrep==1.180.0"
           # Keep the runtime assertion coupled to the spec the weekly bump
           # updates.  A second literal here can leave every install correct
           # while making the gate fail before any scanner runs.
@@ -254,7 +254,7 @@ jobs:
 
       - name: Upload reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: security-reports
           path: |

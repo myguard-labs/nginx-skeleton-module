@@ -1,4 +1,4 @@
-# sync-sha: 0ff44260621e5074e1e945e11fced1dce325f26e473ce30ddb8e2c793ba7a7b6
+# sync-sha: 58cdbfa7d3b13722fe6ab98d5fa9ab6d87f79ba8db13fa96e67c9a2a1e7ab3bc
 name: Build&Test
 
 # The PR gate: everything here must be green to merge. Fast enough to run on
@@ -8,7 +8,7 @@ name: Build&Test
 # Action pins are repeated in every workflow in this repo -- keep them in sync:
 # actions/checkout@v7.0.1        -> 3d3c42e5aac5ba805825da76410c181273ba90b1
 # actions/cache@v6.1.0           -> 55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-# actions/upload-artifact@v7.0.1 -> 043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+# actions/upload-artifact@v7.0.2 -> cf430e030ddbb5b0abf93d22962f4752f3646cd9
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -343,7 +343,7 @@ jobs:
 
       - name: Upload hang evidence
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runtime-hang-evidence
           path: ${{ runner.temp }}/hang
