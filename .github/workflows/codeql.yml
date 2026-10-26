@@ -1,4 +1,4 @@
-# sync-sha: b8f7a34b3854e36870d7dcd914ada658a222dd2ff94a2bb3cc41fef89a362ca0
+# sync-sha: ad6a885b32e250f800cee71d5ea0ae6d3f1377d2ed0b5535c351c9e5840d0b97
 name: CodeQL
 
 # CodeQL on the module TU only.
@@ -17,7 +17,7 @@ name: CodeQL
 # Action pins:
 # actions/checkout@v7.0.1      -> 3d3c42e5aac5ba805825da76410c181273ba90b1
 # actions/cache@v6.1.0         -> 55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-# github/codeql-action@v4.37.7  -> ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
+# github/codeql-action@v4.39.1  -> 9b3254085494b55a0f7c4c2b3d2d52cc712ce370
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -63,7 +63,7 @@ jobs:
             build-essential curl libpcre2-dev zlib1g-dev
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           languages: c-cpp
           queries: security-extended
@@ -86,6 +86,6 @@ jobs:
         run: NO_CACHE=1 bash ci/tools/ci-build.sh nginx "$NGINX_VERSION" module
 
       - name: Analyze
-        uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: /language:c-cpp
